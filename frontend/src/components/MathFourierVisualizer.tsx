@@ -9,13 +9,38 @@ interface VisualizerProps {
     an: number[];
     bn: number[];
     fundamentalFrequency: number;
+    isPlaying: boolean;
+    resetSignal: number;
+    speedMultiplier: number;
+    setSpeedMultiplier: (speed: number) => void;
 }
 
-export default function MathFourierVisualizer({ a0, an, bn, fundamentalFrequency }: VisualizerProps) {
+export default function MathFourierVisualizer({
+    a0,
+    an,
+    bn,
+    fundamentalFrequency,
+    isPlaying,
+    resetSignal,
+    speedMultiplier,
+    setSpeedMultiplier
+}: VisualizerProps) {
     const containerRef = useRef<HTMLDivElement>(null);
-    const [speedMultiplier, setSpeedMultiplier] = useState(1);
     const [dimensions, setDimensions] = useState({ width: 600, height: 400 });
     const animationRef = useRef<number | null>(null);
+
+    const isPlayingRef = useRef(isPlaying);
+    const timeRef = useRef(0);
+    const wavePointsRef = useRef<{ x: number; y: number }[]>([]);
+
+    useEffect(() => {
+        isPlayingRef.current = isPlaying;
+    }, [isPlaying]);
+
+    useEffect(() => {
+        timeRef.current = 0;
+        wavePointsRef.current = [];
+    }, [resetSignal]);
 
     // Responsive resize observer
     useEffect(() => {
@@ -72,9 +97,7 @@ export default function MathFourierVisualizer({ a0, an, bn, fundamentalFrequency
         }
         circles.sort((a, b) => b.radius - a.radius);
 
-        const wavePoints: { x: number; y: number }[] = [];
         const waveHistoryLimit = Math.floor(width * 0.5);
-        let time = 0;
 
         const lineGenerator = d3.line<{ x: number; y: number }>()
             .x((d) => d.x)
@@ -82,9 +105,14 @@ export default function MathFourierVisualizer({ a0, an, bn, fundamentalFrequency
             .curve(d3.curveBasisOpen);
 
         const drawLoop = () => {
+            const time = timeRef.current;
+            const wavePoints = wavePointsRef.current;
+
             let currentX = centerX;
             let currentY = centerY + (a0 * scaleFactor * 0.5);
             epicyclesGroup.selectAll('*').remove();
+
+            let xtVal = a0 / 2;
 
             circles.forEach((circle, idx) => {
                 const prevX = currentX;
@@ -92,6 +120,32 @@ export default function MathFourierVisualizer({ a0, an, bn, fundamentalFrequency
                 const angle = circle.freq * time + circle.phase;
                 currentX += circle.radius * Math.cos(angle);
                 currentY += circle.radius * Math.sin(angle);
+
+                // calculate the math value of this harmonic (unscaled)
+                const n = circle.freq;
+                const a_n = an[n - 1] || 0;
+                const b_n = bn[n - 1] || 0;
+                const cosTerm = a_n * Math.cos(n * time);
+                const sinTerm = b_n * Math.sin(n * time);
+                xtVal += cosTerm + sinTerm;
+
+                // Update individual dynamic equation elements in the DOM
+                const cosEl = document.getElementById(`realtime-cos-val-${n}`);
+                if (cosEl) {
+                    cosEl.innerText = (cosTerm >= 0 ? '+' : '') + cosTerm.toFixed(6);
+                }
+                const cosEqEl = document.getElementById(`realtime-cos-val-eq-${n}`);
+                if (cosEqEl) {
+                    cosEqEl.innerText = (cosTerm >= 0 ? '+' : '') + cosTerm.toFixed(6);
+                }
+                const sinEl = document.getElementById(`realtime-sin-val-${n}`);
+                if (sinEl) {
+                    sinEl.innerText = (sinTerm >= 0 ? '+' : '') + sinTerm.toFixed(6);
+                }
+                const sinEqEl = document.getElementById(`realtime-sin-val-eq-${n}`);
+                if (sinEqEl) {
+                    sinEqEl.innerText = (sinTerm >= 0 ? '+' : '') + sinTerm.toFixed(6);
+                }
 
                 // Orbit ring
                 epicyclesGroup.append('circle')
@@ -111,6 +165,16 @@ export default function MathFourierVisualizer({ a0, an, bn, fundamentalFrequency
                     .attr('stroke', `rgba(167, 139, 250, ${0.5 + idx * 0.03})`)
                     .attr('stroke-width', 1.5);
             });
+
+            // Update main dynamic equations elements in the DOM
+            const xtEl = document.getElementById('realtime-x-val');
+            if (xtEl) {
+                xtEl.innerText = (xtVal >= 0 ? '+' : '') + xtVal.toFixed(6);
+            }
+            const tEl = document.getElementById('realtime-t-val');
+            if (tEl) {
+                tEl.innerText = time.toFixed(2);
+            }
 
             // Tip dot
             epicyclesGroup.append('circle')
@@ -160,7 +224,9 @@ export default function MathFourierVisualizer({ a0, an, bn, fundamentalFrequency
                     .attr('class', 'animate-pulse');
             }
 
-            time += 0.02 * speedMultiplier;
+            if (isPlayingRef.current) {
+                timeRef.current += 0.02 * speedMultiplier;
+            }
             animationRef.current = requestAnimationFrame(drawLoop);
         };
 

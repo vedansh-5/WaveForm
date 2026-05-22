@@ -157,3 +157,48 @@ func SolveFourierSeries(samples []float64, sampleRate int, harmonicsCount int) (
 		FundamentalFrequency: f0,
 	}, nil
 }
+
+// WriteWAV encodes a WaveData struct as a 16-bit Mono PCM WAV stream.
+func WriteWAV(w io.Writer, wave *WaveData) error {
+	header := make([]byte, 44)
+	numSamples := len(wave.Samples)
+	subchunk2Size := numSamples * 2
+	fileSize := 36 + subchunk2Size
+
+	copy(header[0:4], "RIFF")
+	binary.LittleEndian.PutUint32(header[4:8], uint32(fileSize))
+	copy(header[8:12], "WAVE")
+	copy(header[12:16], "fmt ")
+	binary.LittleEndian.PutUint32(header[16:20], 16) // Subchunk1Size
+	binary.LittleEndian.PutUint16(header[20:22], 1)  // AudioFormat = PCM
+	binary.LittleEndian.PutUint16(header[22:24], 1)  // NumChannels = mono
+	binary.LittleEndian.PutUint32(header[24:28], uint32(wave.SampleRate))
+	binary.LittleEndian.PutUint32(header[28:32], uint32(wave.SampleRate*2)) // ByteRate
+	binary.LittleEndian.PutUint16(header[32:34], 2)                         // BlockAlign
+	binary.LittleEndian.PutUint16(header[34:36], 16)                        // BitsPerSample
+	copy(header[36:40], "data")
+	binary.LittleEndian.PutUint32(header[40:44], uint32(subchunk2Size))
+
+	if _, err := w.Write(header); err != nil {
+		return fmt.Errorf("failed to write WAV header: %w", err)
+	}
+
+	rawBytes := make([]byte, numSamples*2)
+	for i, sample := range wave.Samples {
+		val := sample * 32768.0
+		if val > 32767.0 {
+			val = 32767.0
+		} else if val < -32768.0 {
+			val = -32768.0
+		}
+		rawSample := int16(val)
+		binary.LittleEndian.PutUint16(rawBytes[i*2:(i*2)+2], uint32(rawSample))
+	}
+
+	if _, err := w.Write(rawBytes); err != nil {
+		return fmt.Errorf("failed to write PCM samples: %w", err)
+	}
+
+	return nil
+}
+

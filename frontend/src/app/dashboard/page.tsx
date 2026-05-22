@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { apiFetch } from '@/lib/api';
 import { useAudioRecorder } from '@/hooks/useAudioRecorder';
 import MathFourierVisualizer from '@/components/MathFourierVisualizer';
-import { LogOut, Mic, Square, RotateCcw, Upload, History, Music, HelpCircle, Activity, Waves } from 'lucide-react';
+import { LogOut, Mic, Square, RotateCcw, Upload, History, Music, HelpCircle, Activity, Waves, Play, Pause } from 'lucide-react';
 
 interface WaveEquation {
     recording: {
@@ -27,7 +27,7 @@ export default function DashboardPage() {
     const [profile, setProfile] = useState<any>(null);
     const [history, setHistory] = useState<WaveEquation[]>([]);
     const [selectedWave, setSelectedWave] = useState<WaveEquation | null>(null);
-    const [title, setTitle] = useState('');
+        const [title, setTitle] = useState('');
     const [syncing, setSyncing] = useState(false);
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const animationFrameRef = useRef<number | null>(null);
@@ -35,7 +35,62 @@ export default function DashboardPage() {
     const analyserRef = useRef<AnalyserNode | null>(null);
     const micStreamRef = useRef<MediaStream | null>(null);
 
-    const { isRecording, recordingTime, audioBlob, audioUrl, startRecording, stopRecording, reset } = useAudioRecorder(30);
+    // Unified Audio & Fourier Sync States
+    const [isPlaying, setIsPlaying] = useState(false);
+    const [resetSignal, setResetSignal] = useState(0);
+    const [speedMultiplier, setSpeedMultiplier] = useState(1.0);
+    const [isHarmonicsExpanded, setIsHarmonicsExpanded] = useState(false);
+    const [audioPlaybackTime, setAudioPlaybackTime] = useState(0);
+    const [audioDuration, setAudioDuration] = useState(0);
+    const audioRef = useRef<HTMLAudioElement | null>(null);
+
+    const { isRecording, recordingTime, audioBlob, audioUrl, startRecording, stopRecording, reset } = useAudioRecorder(120);
+
+    const getAudioUrl = (filePath: string) => {
+        if (!filePath) return '';
+        const filename = filePath.split(/[\\/]/).pop();
+        return `http://localhost:8080/uploads/${filename}`;
+    };
+
+    // Reset playback deck when a new wave is selected
+    useEffect(() => {
+        setIsPlaying(false);
+        setResetSignal((prev) => prev + 1);
+        setAudioPlaybackTime(0);
+        setAudioDuration(0);
+        if (audioRef.current) {
+            audioRef.current.pause();
+            audioRef.current.currentTime = 0;
+        }
+    }, [selectedWave]);
+
+    // Synchronize playbackRate of the audio element with the D3 speed multiplier
+    useEffect(() => {
+        if (audioRef.current) {
+            audioRef.current.playbackRate = speedMultiplier;
+        }
+    }, [speedMultiplier]);
+
+    const handleTimeUpdate = () => {
+        if (audioRef.current) {
+            setAudioPlaybackTime(audioRef.current.currentTime);
+        }
+    };
+
+    const handleLoadedMetadata = () => {
+        if (audioRef.current) {
+            setAudioDuration(audioRef.current.duration);
+        }
+    };
+
+    const handleAudioEnded = () => {
+        setIsPlaying(false);
+        setResetSignal((prev) => prev + 1);
+        setAudioPlaybackTime(0);
+        if (audioRef.current) {
+            audioRef.current.currentTime = 0;
+        }
+    };
 
     // 1. Fetch Profile and Session History
     useEffect(() => {
@@ -195,7 +250,7 @@ export default function DashboardPage() {
         router.push('/login');
     };
 
-    const progressPercent = (recordingTime / 30) * 100;
+    const progressPercent = Math.min((recordingTime / 30) * 100, 100);
 
     return (
         <div className="min-h-screen bg-[#050507] text-zinc-200 relative overflow-hidden">
@@ -257,6 +312,16 @@ export default function DashboardPage() {
                                 )}
                             </div>
 
+                            {/* Live Recording Truncation Warning */}
+                            {isRecording && (
+                                <div className="mx-5 sm:mx-6 mb-3.5 p-3 rounded-xl border border-amber-500/20 bg-amber-500/5 animate-pulse flex items-start gap-2.5">
+                                    <HelpCircle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+                                    <div className="text-[11px] text-amber-200/80 leading-normal font-medium">
+                                        <span className="font-bold text-amber-300">Max Duration: 30s.</span> Any audio captured beyond 30 seconds will be automatically trimmed when computed.
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Oscilloscope Canvas */}
                             <div className="px-5 sm:px-6">
                                 <div className="relative rounded-xl overflow-hidden border border-white/[0.04] bg-[#08080c]">
@@ -270,7 +335,7 @@ export default function DashboardPage() {
                                     <div className="absolute bottom-3 left-3 flex items-center gap-2">
                                         <span className={`h-2 w-2 rounded-full ${isRecording ? 'bg-rose-500 animate-pulse' : 'bg-zinc-700'}`} />
                                         <span className="text-[11px] font-mono font-bold text-zinc-400 tabular-nums">
-                                            {recordingTime.toFixed(1)}s / 30.0s
+                                            {recordingTime.toFixed(1)}s {recordingTime > 30 ? '(Trimming to 30.0s)' : '/ 30.0s'}
                                         </span>
                                     </div>
                                     {/* Progress bar */}
@@ -405,69 +470,234 @@ export default function DashboardPage() {
                                     an={selectedWave.equation.a_n}
                                     bn={selectedWave.equation.b_n}
                                     fundamentalFrequency={selectedWave.equation.fundamental_frequency}
+                                    isPlaying={isPlaying}
+                                    resetSignal={resetSignal}
+                                    speedMultiplier={speedMultiplier}
+                                    setSpeedMultiplier={setSpeedMultiplier}
                                 />
 
-                                {/* Equation & Coefficient Tables */}
+                                {/* Unified Audio Control Deck */}
+                                <div className="rounded-2xl glass-panel p-5 flex flex-col gap-4 animate-fade-in" style={{ animationDelay: '0.08s' }}>
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <Music className="h-4 w-4 text-violet-400" />
+                                            <span className="text-xs font-bold text-zinc-300 uppercase tracking-wider">Acoustic Playback Deck</span>
+                                        </div>
+                                        <span className="text-[10px] font-mono font-bold text-zinc-500 tabular-nums">
+                                            {audioPlaybackTime.toFixed(1)}s / {audioDuration ? audioDuration.toFixed(1) : '0.0'}s
+                                        </span>
+                                    </div>
+
+                                    {/* Sleek Seek/Progress Bar */}
+                                    <div className="relative w-full h-1.5 rounded-full bg-white/[0.04] border border-white/[0.02] overflow-hidden cursor-pointer"
+                                        onClick={(e) => {
+                                            const rect = e.currentTarget.getBoundingClientRect();
+                                            const clickX = e.clientX - rect.left;
+                                            const width = rect.width;
+                                            const clickPercentage = clickX / width;
+                                            if (audioRef.current && audioDuration) {
+                                                const newTime = clickPercentage * audioDuration;
+                                                audioRef.current.currentTime = newTime;
+                                                setAudioPlaybackTime(newTime);
+                                            }
+                                        }}
+                                    >
+                                        <div
+                                            className="h-full bg-gradient-to-r from-violet-500 to-fuchsia-500 transition-all duration-100"
+                                            style={{ width: `${audioDuration ? (audioPlaybackTime / audioDuration) * 100 : 0}%` }}
+                                        />
+                                    </div>
+
+                                    {/* Controls */}
+                                    <div className="flex items-center justify-center gap-4">
+                                        {/* Stop/Reset */}
+                                        <button
+                                            onClick={() => {
+                                                setIsPlaying(false);
+                                                setResetSignal((prev) => prev + 1);
+                                                setAudioPlaybackTime(0);
+                                                if (audioRef.current) {
+                                                    audioRef.current.pause();
+                                                    audioRef.current.currentTime = 0;
+                                                }
+                                            }}
+                                            className="p-3 rounded-xl border border-white/[0.06] bg-white/[0.01] hover:bg-white/[0.05] hover:border-white/[0.1] text-zinc-400 hover:text-white transition-all cursor-pointer"
+                                            title="Stop & Reset Visuals"
+                                        >
+                                            <Square className="h-4 w-4 fill-zinc-400" />
+                                        </button>
+
+                                        {/* Play/Pause */}
+                                        <button
+                                            onClick={() => {
+                                                if (!audioRef.current) return;
+                                                if (isPlaying) {
+                                                    audioRef.current.pause();
+                                                    setIsPlaying(false);
+                                                } else {
+                                                    audioRef.current.play().catch(console.error);
+                                                    setIsPlaying(true);
+                                                }
+                                            }}
+                                            className="h-12 w-12 rounded-full bg-gradient-to-br from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white flex items-center justify-center shadow-lg shadow-violet-500/20 hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                                            title={isPlaying ? 'Pause' : 'Play Audio'}
+                                        >
+                                            {isPlaying ? (
+                                                <Pause className="h-5 w-5 fill-white text-white" />
+                                            ) : (
+                                                <Play className="h-5 w-5 fill-white text-white translate-x-0.5" />
+                                            )}
+                                        </button>
+                                    </div>
+
+                                    {/* Hidden HTML5 Audio Element */}
+                                    {selectedWave && (
+                                        <audio
+                                            ref={audioRef}
+                                            src={getAudioUrl(selectedWave.recording.file_path)}
+                                            onTimeUpdate={handleTimeUpdate}
+                                            onLoadedMetadata={handleLoadedMetadata}
+                                            onEnded={handleAudioEnded}
+                                            className="hidden"
+                                        />
+                                    )}
+                                </div>
+
+                                {/* Highlighted Equation & Collapsible Coefficients */}
                                 <div className="rounded-2xl glass-panel overflow-hidden animate-fade-in" style={{ animationDelay: '0.15s' }}>
                                     <div className="px-5 sm:px-6 pt-5 sm:pt-6 pb-4">
                                         <h3 className="text-sm font-bold text-white uppercase tracking-wider">Fourier Series Equation</h3>
                                     </div>
 
                                     <div className="px-5 sm:px-6 pb-5 sm:pb-6 space-y-5">
-                                        {/* Mathematical notation */}
-                                        <div className="p-4 sm:p-5 rounded-xl bg-[#08080c] border border-white/[0.04] overflow-x-auto text-center">
-                                            <p className="text-sm text-zinc-400 font-serif leading-7">
-                                                x(t) ≈{' '}
-                                                <span className="text-violet-400 font-mono font-semibold">
-                                                    {(selectedWave.equation.a_0 / 2).toFixed(4)}
-                                                </span>{' '}
-                                                +
-                                                <span className="block my-2 text-zinc-600 text-[11px] font-mono">
-                                                    Σ ( a<sub>n</sub> · cos(n · ω₀ · t) + b<sub>n</sub> · sin(n · ω₀ · t) )
-                                                </span>
-                                            </p>
-                                            <p className="text-[10px] text-zinc-600 mt-2 font-mono">
-                                                ω₀ = 2π · {selectedWave.equation.fundamental_frequency.toFixed(1)} Hz
-                                            </p>
-                                        </div>
+                                        {/* Dynamic Highlighted Equation Box */}
+                                         <div className="p-5 sm:p-6 rounded-xl bg-violet-950/10 border border-violet-500/20 shadow-lg shadow-violet-500/5 text-center relative overflow-hidden">
+                                             {/* Ambient glow inside */}
+                                             <div className="absolute -top-12 -left-12 w-24 h-24 rounded-full bg-violet-500/10 blur-xl pointer-events-none" />
 
-                                        {/* Coefficient tables */}
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                                            {/* Cosine (a_n) */}
-                                            <div>
-                                                <h4 className="text-[10px] font-bold text-zinc-500 uppercase tracking-[0.15em] mb-3 flex items-center gap-2">
-                                                    <span className="h-1.5 w-1.5 rounded-full bg-violet-500" />
-                                                    Cosine Harmonics (a<sub>n</sub>)
-                                                </h4>
-                                                <div className="space-y-1 max-h-[180px] overflow-y-auto pr-1">
-                                                    {selectedWave.equation.a_n.map((val, idx) => (
-                                                        <div key={idx} className="flex justify-between items-center py-1.5 px-3 rounded-lg bg-white/[0.015] text-[11px] font-mono">
-                                                            <span className="text-zinc-600">n = {idx + 1}</span>
-                                                            <span className={val >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
-                                                                {val >= 0 ? '+' : ''}{val.toFixed(6)}
-                                                            </span>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
+                                             <div className="relative z-10 space-y-4">
+                                                 {/* Header / Focal Equation */}
+                                                 <div className="text-2xl font-extrabold tracking-tight text-white font-mono flex items-center justify-center flex-wrap gap-2">
+                                                     <span>x(t) ≈</span>
+                                                     <span id="realtime-x-val" className="text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-fuchsia-400 border-b-2 border-violet-500/30 pb-0.5 px-2 tabular-nums">
+                                                         {(selectedWave.equation.a_0 / 2).toFixed(6)}
+                                                     </span>
+                                                 </div>
 
-                                            {/* Sine (b_n) */}
-                                            <div>
-                                                <h4 className="text-[10px] font-bold text-zinc-500 uppercase tracking-[0.15em] mb-3 flex items-center gap-2">
-                                                    <span className="h-1.5 w-1.5 rounded-full bg-fuchsia-500" />
-                                                    Sine Harmonics (b<sub>n</sub>)
-                                                </h4>
-                                                <div className="space-y-1 max-h-[180px] overflow-y-auto pr-1">
-                                                    {selectedWave.equation.b_n.map((val, idx) => (
-                                                        <div key={idx} className="flex justify-between items-center py-1.5 px-3 rounded-lg bg-white/[0.015] text-[11px] font-mono">
-                                                            <span className="text-zinc-600">n = {idx + 1}</span>
-                                                            <span className={val >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
-                                                                {val >= 0 ? '+' : ''}{val.toFixed(6)}
-                                                            </span>
-                                                        </div>
-                                                    ))}
+                                                 <div className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold font-mono">
+                                                     Expanded Fourier Series Equation (12 Harmonics)
+                                                 </div>
+
+                                                 {/* Beautifully Styled, Scrollable Harmonic Equation list */}
+                                                 <div className="bg-[#08080c]/80 border border-white/[0.04] rounded-xl p-4 font-mono text-[11px] text-zinc-300 max-h-[160px] overflow-y-auto space-y-2.5 text-left custom-scrollbar scrollbar-thin">
+                                                     <div className="border-b border-white/[0.04] pb-2 text-[10px] text-zinc-500 flex items-center justify-between">
+                                                         <span>CONSTANT TERM (DC OFFSET)</span>
+                                                         <span className="text-violet-400 font-bold">{(selectedWave.equation.a_0 / 2).toFixed(6)}</span>
+                                                     </div>
+                                                     
+                                                     {selectedWave.equation.a_n.map((_, idx) => {
+                                                         const n = idx + 1;
+                                                         const a_n = selectedWave.equation.a_n[idx];
+                                                         const b_n = selectedWave.equation.b_n[idx];
+                                                         return (
+                                                             <div key={idx} className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 py-1.5 border-b border-white/[0.02] last:border-0">
+                                                                 <div className="flex items-center gap-1.5 truncate">
+                                                                     <span className="text-zinc-600 font-bold shrink-0">H{n}:</span>
+                                                                     <span className="text-fuchsia-400 text-[10px] font-semibold shrink-0">({a_n.toFixed(4)})</span>
+                                                                     <span className="text-zinc-400 font-semibold shrink-0">· cos({n}ω₀t)</span>
+                                                                     <span id={`realtime-cos-val-eq-${n}`} className="text-violet-400 font-bold tabular-nums">
+                                                                         +0.000000
+                                                                     </span>
+                                                                 </div>
+                                                                 <div className="flex items-center gap-1.5 truncate sm:ml-auto">
+                                                                     <span className="text-emerald-400 text-[10px] font-semibold shrink-0">({b_n.toFixed(4)})</span>
+                                                                     <span className="text-zinc-400 font-semibold shrink-0">· sin({n}ω₀t)</span>
+                                                                     <span id={`realtime-sin-val-eq-${n}`} className="text-teal-400 font-bold tabular-nums">
+                                                                         +0.000000
+                                                                     </span>
+                                                                 </div>
+                                                             </div>
+                                                         );
+                                                     })}
+                                                 </div>
+
+                                                 {/* Bottom Metadata */}
+                                                 <div className="text-[10px] text-zinc-500 mt-2 font-mono flex items-center justify-center gap-4 border-t border-white/[0.04] pt-3">
+                                                     <span>ω₀ = 2π · {selectedWave.equation.fundamental_frequency.toFixed(1)} Hz</span>
+                                                     <span className="text-zinc-700">|</span>
+                                                     <span>t = <span id="realtime-t-val" className="text-zinc-300">0.00</span>s</span>
+                                                 </div>
+                                             </div>
+                                         </div>
+
+                                        {/* Collapsible Spectrum Menu */}
+                                        <div className="border border-white/[0.04] rounded-xl overflow-hidden bg-white/[0.01]">
+                                            <button
+                                                onClick={() => setIsHarmonicsExpanded(!isHarmonicsExpanded)}
+                                                className="w-full px-5 py-4 flex items-center justify-between hover:bg-white/[0.02] transition-colors cursor-pointer text-left"
+                                            >
+                                                <div className="flex items-center gap-2.5">
+                                                    <div className="h-2 w-2 rounded-full bg-violet-400 animate-pulse" />
+                                                    <span className="text-xs font-bold text-zinc-300 uppercase tracking-wider">
+                                                        Harmonic Spectrum Coefficients
+                                                    </span>
                                                 </div>
-                                            </div>
+                                                <svg
+                                                    className={`h-4 w-4 text-zinc-500 transition-transform duration-300 ${isHarmonicsExpanded ? 'rotate-180' : ''}`}
+                                                    fill="none"
+                                                    viewBox="0 0 24 24"
+                                                    stroke="currentColor"
+                                                    strokeWidth="2.5"
+                                                >
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                                                </svg>
+                                            </button>
+
+                                            {isHarmonicsExpanded && (
+                                                <div className="px-5 pb-5 pt-3 border-t border-white/[0.04] grid grid-cols-1 sm:grid-cols-2 gap-5 animate-fade-in">
+                                                    {/* Cosine Harmonics */}
+                                                    <div>
+                                                        <h4 className="text-[10px] font-bold text-zinc-500 uppercase tracking-[0.15em] mb-3 flex items-center gap-2">
+                                                            <span className="h-1.5 w-1.5 rounded-full bg-violet-500" />
+                                                            Cosine Harmonics (a<sub>n</sub>)
+                                                        </h4>
+                                                        <div className="space-y-1.5 max-h-[220px] overflow-y-auto pr-1">
+                                                            {selectedWave.equation.a_n.map((val, idx) => (
+                                                                <div key={idx} className="flex justify-between items-center py-2 px-3 rounded-lg bg-white/[0.015] hover:bg-white/[0.03] transition-colors border border-white/[0.02] text-[11px] font-mono">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className="text-zinc-600">n = {idx + 1}</span>
+                                                                        <span className="text-[9px] text-zinc-500">({val >= 0 ? '+' : ''}{val.toFixed(4)})</span>
+                                                                    </div>
+                                                                    <span id={`realtime-cos-val-${idx + 1}`} className={`font-semibold ${val >= 0 ? 'text-violet-400' : 'text-fuchsia-400'}`}>
+                                                                        {val >= 0 ? '+' : ''}{val.toFixed(6)}
+                                                                    </span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Sine Harmonics */}
+                                                    <div>
+                                                        <h4 className="text-[10px] font-bold text-zinc-500 uppercase tracking-[0.15em] mb-3 flex items-center gap-2">
+                                                            <span className="h-1.5 w-1.5 rounded-full bg-fuchsia-500" />
+                                                            Sine Harmonics (b<sub>n</sub>)
+                                                        </h4>
+                                                        <div className="space-y-1.5 max-h-[220px] overflow-y-auto pr-1">
+                                                            {selectedWave.equation.b_n.map((val, idx) => (
+                                                                <div key={idx} className="flex justify-between items-center py-2 px-3 rounded-lg bg-white/[0.015] hover:bg-white/[0.03] transition-colors border border-white/[0.02] text-[11px] font-mono">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className="text-zinc-600">n = {idx + 1}</span>
+                                                                        <span className="text-[9px] text-zinc-500">({val >= 0 ? '+' : ''}{val.toFixed(4)})</span>
+                                                                    </div>
+                                                                    <span id={`realtime-sin-val-${idx + 1}`} className={`font-semibold ${val >= 0 ? 'text-emerald-400' : 'text-teal-400'}`}>
+                                                                        {val >= 0 ? '+' : ''}{val.toFixed(6)}
+                                                                    </span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
