@@ -1,0 +1,22 @@
+# Backend Secrets & Dynamic Storage
+backend/.env
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Frontend Dependencies & Build Targets
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+
+# System & Editor Caches
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
+*.exe
+*.test
