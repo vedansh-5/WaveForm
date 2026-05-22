@@ -578,28 +578,55 @@ export default function DashboardPage() {
                                              <div className="absolute -top-12 -left-12 w-24 h-24 rounded-full bg-violet-500/10 blur-xl pointer-events-none" />
 
                                              <div className="relative z-10 space-y-4">
-                                                 {/* Mathematical Formula Display - Realtime Equation Representation */}
-                                                 <div className="p-4 rounded-xl bg-violet-950/15 border border-violet-500/10 font-mono text-[11px] sm:text-xs text-zinc-200 overflow-x-auto whitespace-nowrap scrollbar-none flex items-center justify-center gap-2 py-3.5 shadow-inner">
-                                                     <span className="text-zinc-500 font-bold shrink-0">x(t) ≈</span>
-                                                     <span id="realtime-eq-dc" className="text-violet-400 font-extrabold tabular-nums shrink-0">{(selectedWave.equation.a_0 / 2).toFixed(4)}</span>
-                                                     
-                                                     <span className="text-zinc-600 font-bold shrink-0">+</span>
-                                                     <span id="realtime-eq-cos-1" className="text-fuchsia-400 font-extrabold tabular-nums shrink-0">({selectedWave.equation.a_n[0].toFixed(4)})</span>
-                                                     <span className="text-zinc-400 shrink-0">·cos(ω₀t)</span>
-                                                     
-                                                     <span className="text-zinc-600 font-bold shrink-0">+</span>
-                                                     <span id="realtime-eq-sin-1" className="text-emerald-400 font-extrabold tabular-nums shrink-0">({selectedWave.equation.b_n[0].toFixed(4)})</span>
-                                                     <span className="text-zinc-400 shrink-0">·sin(ω₀t)</span>
-                                                     
-                                                     <span className="text-zinc-600 font-bold shrink-0">+</span>
-                                                     <span id="realtime-eq-cos-2" className="text-fuchsia-400 font-extrabold tabular-nums shrink-0">({selectedWave.equation.a_n[1].toFixed(4)})</span>
-                                                     <span className="text-zinc-400 shrink-0">·cos(2ω₀t)</span>
-                                                     
-                                                     <span className="text-zinc-600 font-bold shrink-0">+</span>
-                                                     <span id="realtime-eq-sin-2" className="text-emerald-400 font-extrabold tabular-nums shrink-0">({selectedWave.equation.b_n[1].toFixed(4)})</span>
-                                                     <span className="text-zinc-400 shrink-0">·sin(2ω₀t)</span>
-                                                     
-                                                     <span className="text-zinc-600 font-extrabold shrink-0">+ ...</span>
+                                                 {/* Mathematical Formula Display - Realtime Centered Textbook Equation Layout */}
+                                                 <div className="flex flex-col items-center justify-center p-4 sm:p-5 rounded-xl bg-violet-950/15 border border-violet-500/10 py-5 sm:py-6 shadow-inner text-center select-none overflow-x-auto w-full scrollbar-none">
+                                                     {/* Wave Classification Badge */}
+                                                     <div className="mb-3.5">
+                                                         <span className="px-3 py-1 rounded-full text-[10px] font-bold tracking-[0.2em] uppercase bg-violet-500/10 text-violet-300 border border-violet-500/20">
+                                                             Detected: <span id="realtime-wave-classification" className="text-white font-mono font-bold">General Harmonic Wave</span>
+                                                         </span>
+                                                     </div>
+
+                                                     {/* Center Textbook Math Summation Formula */}
+                                                     <div id="textbook-equation-container" className="flex items-center justify-center font-serif text-white tracking-normal text-lg sm:text-2xl min-h-[80px] max-w-full overflow-x-auto scrollbar-none py-1">
+                                                         <div className="flex items-center gap-1 font-serif text-white text-lg sm:text-2xl tracking-normal">
+                                                             <span className="italic text-zinc-400 shrink-0">y(t)</span>
+                                                             <span className="mx-1 text-zinc-500 shrink-0">=</span>
+                                                             <div className="flex flex-col items-center mx-2 text-zinc-200 shrink-0">
+                                                                 <span className="border-b border-zinc-600 px-2 pb-0.5 text-center font-mono text-sm sm:text-lg" id="realtime-eq-dc-frac">a₀</span>
+                                                                 <span className="pt-0.5 text-center font-mono text-sm sm:text-lg">2</span>
+                                                             </div>
+                                                             <span className="mx-1 text-zinc-500 font-bold shrink-0">+</span>
+                                                             <div className="flex flex-col items-center mx-1 shrink-0">
+                                                                 <span className="text-[9px] font-mono text-zinc-500 mb-[-4px]" id="math-eq-upper-bound">12</span>
+                                                                 <span className="text-2xl sm:text-4xl font-light leading-none text-violet-400 select-none">∑</span>
+                                                                 <span className="text-[9px] font-mono text-zinc-500 mt-[-2px]" id="math-eq-lower-bound">n=1</span>
+                                                             </div>
+                                                             <div className="flex items-center gap-1 text-zinc-300 shrink-0 text-xs sm:text-lg">
+                                                                 <span className="text-xl text-zinc-500 font-light mr-0.5">(</span>
+                                                                 <span className="font-mono text-xs sm:text-sm text-fuchsia-400 font-bold" id="math-eq-an-coeff">aₙ</span>
+                                                                 <span className="italic text-zinc-400 text-xs sm:text-base">cos</span>
+                                                                 <span className="text-zinc-500 text-xs sm:text-base">(</span>
+                                                                 <span className="italic text-zinc-400 text-[10px] sm:text-sm font-mono">nω₀t</span>
+                                                                 <span className="text-zinc-500 text-xs sm:text-base">)</span>
+                                                                 <span className="mx-0.5 text-zinc-500 font-bold">+</span>
+                                                                 <span className="font-mono text-xs sm:text-sm text-emerald-400 font-bold" id="math-eq-bn-coeff">bₙ</span>
+                                                                 <span className="italic text-zinc-400 text-xs sm:text-base">sin</span>
+                                                                 <span className="text-zinc-500 text-xs sm:text-base">(</span>
+                                                                 <span className="italic text-zinc-400 text-[10px] sm:text-sm font-mono">nω₀t</span>
+                                                                 <span className="text-zinc-500 text-xs sm:text-base">)</span>
+                                                                 <span className="text-xl text-zinc-500 font-light ml-0.5">)</span>
+                                                             </div>
+                                                         </div>
+                                                     </div>
+
+                                                     {/* Real-time Dynamic Math Expanded Term (Textbook Style) */}
+                                                     <div className="mt-4 w-full max-w-xl text-center py-2.5 px-4 rounded-xl border border-white/[0.02] bg-white/[0.01]">
+                                                         <p className="text-[9px] text-zinc-500 font-mono uppercase tracking-[0.2em] font-bold">Real-time Series Approximation</p>
+                                                         <div className="mt-2 font-serif italic text-xs sm:text-sm text-zinc-300 overflow-x-auto whitespace-nowrap scrollbar-none py-1 flex items-center justify-center gap-1.5" id="math-eq-expanded-approx">
+                                                             y(t) ≈ {(selectedWave.equation.a_0 / 2).toFixed(4)} + {selectedWave.equation.a_n[0].toFixed(4)} cos(ω₀t) + {selectedWave.equation.b_n[0].toFixed(4)} sin(ω₀t) + ...
+                                                         </div>
+                                                     </div>
                                                  </div>
 
                                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between text-[10px] text-zinc-500 uppercase tracking-widest font-bold font-mono px-1 gap-1">

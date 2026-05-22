@@ -101,6 +101,184 @@ function solveFourierSeriesInJS(
     };
 }
 
+// Dynamic Waveform Classification & Textbook Formula Builder
+function classifyWaveform(an: number[], bn: number[]): { name: string; formulaHTML: string } {
+    const N = an.length;
+    const C = an.map((a, i) => Math.sqrt(a * a + bn[i] * bn[i]));
+    const totalE = C.reduce((sum, val) => sum + val * val, 0);
+
+    if (totalE < 0.0001) {
+        return {
+            name: "Silence",
+            formulaHTML: `<div class="flex items-center gap-1 font-serif text-zinc-500 text-lg sm:text-2xl italic select-none">y(t) = 0</div>`
+        };
+    }
+
+    const fundEnergyRatio = (C[0] * C[0]) / totalE;
+
+    let oddEnergy = 0;
+    let evenEnergy = 0;
+    for (let i = 0; i < N; i++) {
+        if ((i + 1) % 2 === 1) {
+            oddEnergy += C[i] * C[i];
+        } else {
+            evenEnergy += C[i] * C[i];
+        }
+    }
+    const oddRatio = oddEnergy / totalE;
+    const evenRatio = evenEnergy / totalE;
+
+    // 1. Pure Sine (fundamental harmonic contains > 82% of energy)
+    if (fundEnergyRatio > 0.82) {
+        return {
+            name: "Pure Sinusoidal Wave",
+            formulaHTML: `
+                <div class="flex items-center gap-1 font-serif text-white text-lg sm:text-2xl tracking-normal select-none">
+                    <span class="italic text-zinc-400">y(t)</span>
+                    <span class="mx-1.5 text-zinc-500">=</span>
+                    <span class="font-mono text-zinc-200">${C[0].toFixed(3)}</span>
+                    <span class="italic text-zinc-400 ml-1.5">sin</span>
+                    <span class="text-zinc-500">(</span>
+                    <span class="italic text-zinc-400 font-mono text-sm sm:text-lg">ω₀t</span>
+                    <span class="text-zinc-500">)</span>
+                </div>
+            `
+        };
+    }
+
+    // 2. Triangle Wave (odd harmonics dominant, decay very rapidly ~1/n^2)
+    if (oddRatio > 0.85 && (C[2] / C[0] < 0.15)) {
+        return {
+            name: "Symmetric Triangle Wave",
+            formulaHTML: `
+                <div class="flex items-center gap-1 font-serif text-white text-lg sm:text-2xl tracking-normal select-none">
+                    <span class="italic text-zinc-400 shrink-0">y(t)</span>
+                    <span class="mx-1.5 text-zinc-500 shrink-0">=</span>
+                    <div class="flex flex-col items-center mx-2 text-zinc-200 shrink-0">
+                        <span class="border-b border-zinc-600 px-2 pb-0.5 text-center font-serif text-sm sm:text-lg">8A</span>
+                        <span class="pt-0.5 text-center font-serif text-sm sm:text-lg">π²</span>
+                    </div>
+                    <div class="flex flex-col items-center mx-1 shrink-0">
+                        <span class="text-[9px] font-mono text-zinc-500 mb-[-4px]">12</span>
+                        <span class="text-2xl sm:text-4xl font-light leading-none text-violet-400 select-none">∑</span>
+                        <span class="text-[9px] font-mono text-zinc-500 mt-[-2px]">k=0</span>
+                    </div>
+                    <div class="flex items-center gap-1 text-zinc-300 shrink-0 text-sm sm:text-lg">
+                        <div class="flex flex-col items-center mx-1 text-zinc-300">
+                            <span class="border-b border-zinc-600 px-1 pb-0.5 text-center font-serif text-xs">(-1)<sup>k</sup></span>
+                            <span class="pt-0.5 text-center font-serif text-xs">(2k+1)<sup>2</sup></span>
+                        </div>
+                        <span class="italic text-zinc-400 ml-1">sin</span>
+                        <span class="text-zinc-500">(</span>
+                        <span class="italic text-zinc-400 text-xs sm:text-sm font-mono">(2k+1)ω₀t</span>
+                        <span class="text-zinc-500">)</span>
+                    </div>
+                </div>
+            `
+        };
+    }
+
+    // 3. Square Wave (odd harmonics dominant, decay slowly ~1/n)
+    if (oddRatio > 0.85) {
+        return {
+            name: "Symmetric Square Wave",
+            formulaHTML: `
+                <div class="flex items-center gap-1 font-serif text-white text-lg sm:text-2xl tracking-normal select-none">
+                    <span class="italic text-zinc-400 shrink-0">y(t)</span>
+                    <span class="mx-1.5 text-zinc-500 shrink-0">=</span>
+                    <div class="flex flex-col items-center mx-2 text-zinc-200 shrink-0">
+                        <span class="border-b border-zinc-600 px-2 pb-0.5 text-center font-serif text-sm sm:text-lg">4A</span>
+                        <span class="pt-0.5 text-center font-serif text-sm sm:text-lg">π</span>
+                    </div>
+                    <div class="flex flex-col items-center mx-1 shrink-0">
+                        <span class="text-[9px] font-mono text-zinc-500 mb-[-4px]">12</span>
+                        <span class="text-2xl sm:text-4xl font-light leading-none text-violet-400 select-none">∑</span>
+                        <span class="text-[9px] font-mono text-zinc-500 mt-[-2px]">k=0</span>
+                    </div>
+                    <div class="flex items-center gap-1 text-zinc-300 shrink-0 text-sm sm:text-lg">
+                        <div class="flex flex-col items-center mx-1 text-zinc-300">
+                            <span class="border-b border-zinc-600 px-1 pb-0.5 text-center font-serif text-xs">1</span>
+                            <span class="pt-0.5 text-center font-serif text-xs">2k+1</span>
+                        </div>
+                        <span class="italic text-zinc-400 ml-1">sin</span>
+                        <span class="text-zinc-500">(</span>
+                        <span class="italic text-zinc-400 text-xs sm:text-sm font-mono">(2k+1)ω₀t</span>
+                        <span class="text-zinc-500">)</span>
+                    </div>
+                </div>
+            `
+        };
+    }
+
+    // 4. Sawtooth Wave (even and odd harmonics are prominent)
+    if (evenRatio > 0.20 && oddRatio > 0.35 && C[1] / C[0] > 0.25) {
+        return {
+            name: "Asymmetric Sawtooth Wave",
+            formulaHTML: `
+                <div class="flex items-center gap-1 font-serif text-white text-lg sm:text-2xl tracking-normal select-none">
+                    <span class="italic text-zinc-400 shrink-0">y(t)</span>
+                    <span class="mx-1.5 text-zinc-500 shrink-0">=</span>
+                    <div class="flex flex-col items-center mx-2 text-zinc-200 shrink-0">
+                        <span class="border-b border-zinc-600 px-2 pb-0.5 text-center font-serif text-sm sm:text-lg">2A</span>
+                        <span class="pt-0.5 text-center font-serif text-sm sm:text-lg">π</span>
+                    </div>
+                    <div class="flex flex-col items-center mx-1 shrink-0">
+                        <span class="text-[9px] font-mono text-zinc-500 mb-[-4px]">12</span>
+                        <span class="text-2xl sm:text-4xl font-light leading-none text-violet-400 select-none">∑</span>
+                        <span class="text-[9px] font-mono text-zinc-500 mt-[-2px]">n=1</span>
+                    </div>
+                    <div class="flex items-center gap-1 text-zinc-300 shrink-0 text-sm sm:text-lg">
+                        <div class="flex flex-col items-center mx-1 text-zinc-300">
+                            <span class="border-b border-zinc-600 px-1 pb-0.5 text-center font-serif text-xs">(-1)<sup>n+1</sup></span>
+                            <span class="pt-0.5 text-center font-serif text-xs">n</span>
+                        </div>
+                        <span class="italic text-zinc-400 ml-1">sin</span>
+                        <span class="text-zinc-500">(</span>
+                        <span class="italic text-zinc-400 text-xs sm:text-sm font-mono">nω₀t</span>
+                        <span class="text-zinc-500">)</span>
+                    </div>
+                </div>
+            `
+        };
+    }
+
+    // Default: General Fourier Series Summation
+    return {
+        name: "General Harmonic Waveform",
+        formulaHTML: `
+            <div class="flex items-center gap-1 font-serif text-white text-lg sm:text-2xl tracking-normal select-none">
+                <span class="italic text-zinc-400 shrink-0">y(t)</span>
+                <span class="mx-1.5 text-zinc-500 shrink-0">=</span>
+                <div class="flex flex-col items-center mx-2 text-zinc-200 shrink-0">
+                    <span class="border-b border-zinc-600 px-2 pb-0.5 text-center font-mono text-sm sm:text-lg" id="realtime-eq-dc-frac">a₀</span>
+                    <span class="pt-0.5 text-center font-mono text-sm sm:text-lg">2</span>
+                </div>
+                <span class="mx-1 text-zinc-500 font-bold shrink-0">+</span>
+                <div class="flex flex-col items-center mx-1 shrink-0">
+                    <span class="text-[9px] font-mono text-zinc-500 mb-[-4px]">12</span>
+                    <span class="text-2xl sm:text-4xl font-light leading-none text-violet-400 select-none">∑</span>
+                    <span class="text-[9px] font-mono text-zinc-500 mt-[-2px]">n=1</span>
+                </div>
+                <div class="flex items-center gap-1 text-zinc-300 shrink-0 text-xs sm:text-lg">
+                    <span class="text-xl text-zinc-500 font-light mr-0.5">(</span>
+                    <span class="font-mono text-xs sm:text-sm text-fuchsia-400 font-bold">aₙ</span>
+                    <span class="italic text-zinc-400 text-xs sm:text-base">cos</span>
+                    <span class="text-zinc-500 text-xs sm:text-base">(</span>
+                    <span class="italic text-zinc-400 text-[10px] sm:text-sm font-mono">nω₀t</span>
+                    <span class="text-zinc-500 text-xs sm:text-base">)</span>
+                    <span class="mx-0.5 text-zinc-500 font-bold">+</span>
+                    <span class="font-mono text-xs sm:text-sm text-emerald-400 font-bold">bₙ</span>
+                    <span class="italic text-zinc-400 text-xs sm:text-base">sin</span>
+                    <span class="text-zinc-500 text-xs sm:text-base">(</span>
+                    <span class="italic text-zinc-400 text-[10px] sm:text-sm font-mono">nω₀t</span>
+                    <span class="text-zinc-500 text-xs sm:text-base">)</span>
+                    <span class="text-xl text-zinc-500 font-light ml-0.5">)</span>
+                </div>
+            </div>
+        `
+    };
+}
+
 interface VisualizerProps {
     a0: number;
     an: number[];
@@ -130,7 +308,6 @@ export default function MathFourierVisualizer({
 
     const isPlayingRef = useRef(isPlaying);
     const timeRef = useRef(0);
-    const wavePointsRef = useRef<{ x: number; y: number }[]>([]);
 
     useEffect(() => {
         isPlayingRef.current = isPlaying;
@@ -138,7 +315,6 @@ export default function MathFourierVisualizer({
 
     useEffect(() => {
         timeRef.current = 0;
-        wavePointsRef.current = [];
     }, [resetSignal]);
 
     // Responsive resize observer
@@ -173,19 +349,81 @@ export default function MathFourierVisualizer({
             .attr('height', height)
             .attr('class', 'overflow-visible');
 
-        const epicyclesGroup = svg.append('g');
+        // Setup Groups
+        const axesGroup = svg.append('g');
         const waveGroup = svg.append('g');
+        const epicyclesGroup = svg.append('g');
 
-        const waveHistoryLimit = Math.floor(width * 0.5);
+        // Setup Defs for Gradient and Marker
+        const defs = svg.append('defs');
+        
+        const grad = defs.append('linearGradient')
+            .attr('id', 'wave-gradient')
+            .attr('x1', '0%')
+            .attr('y1', '0%')
+            .attr('x2', '100%')
+            .attr('y2', '0%');
+        grad.append('stop').attr('offset', '0%').attr('stop-color', '#f43f5e');
+        grad.append('stop').attr('offset', '100%').attr('stop-color', '#8b5cf6');
+
+        defs.append('marker')
+            .attr('id', 'arrow-end')
+            .attr('viewBox', '0 0 10 10')
+            .attr('refX', 6)
+            .attr('refY', 5)
+            .attr('markerWidth', 6)
+            .attr('markerHeight', 6)
+            .attr('orient', 'auto-start-reverse')
+            .append('path')
+            .attr('d', 'M 0 1.5 L 8 5 L 0 8.5 z')
+            .attr('fill', 'rgba(255, 255, 255, 0.35)');
+
+        // Draw static textbook coordinate axes
+        const axesColor = 'rgba(255, 255, 255, 0.12)';
+        const waveWidth = width - 40 - waveStartX;
+        const waveHistory: number[] = [];
+
+        // t-axis (horizontal)
+        axesGroup.append('line')
+            .attr('x1', waveStartX - 15)
+            .attr('y1', centerY)
+            .attr('x2', width - 25)
+            .attr('y2', centerY)
+            .attr('stroke', axesColor)
+            .attr('stroke-width', 1.2)
+            .attr('marker-end', 'url(#arrow-end)');
+
+        // y-axis (vertical)
+        axesGroup.append('line')
+            .attr('x1', waveStartX)
+            .attr('y1', height - 25)
+            .attr('x2', waveStartX)
+            .attr('y2', 25)
+            .attr('stroke', axesColor)
+            .attr('stroke-width', 1.2)
+            .attr('marker-end', 'url(#arrow-end)');
+
+        // Axes labels (serif math italic)
+        axesGroup.append('text')
+            .attr('x', width - 20)
+            .attr('y', centerY + 16)
+            .attr('text-anchor', 'end')
+            .attr('class', 'font-serif italic fill-zinc-500 text-[11px] sm:text-xs select-none')
+            .text('t');
+
+        axesGroup.append('text')
+            .attr('x', waveStartX - 14)
+            .attr('y', 23)
+            .attr('class', 'font-serif italic fill-zinc-500 text-[11px] sm:text-xs select-none')
+            .text('y');
 
         const lineGenerator = d3.line<{ x: number; y: number }>()
             .x((d) => d.x)
             .y((d) => d.y)
-            .curve(d3.curveBasisOpen);
+            .curve(d3.curveLinear);
 
         const drawLoop = () => {
             const time = timeRef.current;
-            const wavePoints = wavePointsRef.current;
 
             // Step 1: Resolve smooth real-time or static frequency & volume variables
             let a0_val = a0;
@@ -429,6 +667,47 @@ export default function MathFourierVisualizer({
                 tEl.innerText = time.toFixed(2);
             }
 
+            // Real-time Wave Classification & Textbook Equation Layout Update
+            const classification = classifyWaveform(an_val, bn_val);
+            
+            const classBadgeEl = document.getElementById('realtime-wave-classification');
+            if (classBadgeEl) {
+                classBadgeEl.innerText = classification.name;
+            }
+
+            const equationContainer = document.getElementById('textbook-equation-container');
+            if (equationContainer) {
+                equationContainer.innerHTML = classification.formulaHTML;
+            }
+
+            // Generate clean series expansion approximation:
+            let approxString = `y(t) ≈ ${(a0_val / 2).toFixed(3)}`;
+            let addedTermsCount = 0;
+            for (let n = 1; n <= N; n++) {
+                const a_n = an_val[n - 1];
+                const b_n = bn_val[n - 1];
+                if (Math.abs(a_n) > 0.005) {
+                    approxString += ` ${a_n >= 0 ? '+' : '-'} ${Math.abs(a_n).toFixed(3)} cos(${n === 1 ? '' : n}ω₀t)`;
+                    addedTermsCount++;
+                }
+                if (Math.abs(b_n) > 0.005) {
+                    approxString += ` ${b_n >= 0 ? '+' : '-'} ${Math.abs(b_n).toFixed(3)} sin(${n === 1 ? '' : n}ω₀t)`;
+                    addedTermsCount++;
+                }
+                if (addedTermsCount >= 4) {
+                    approxString += " + ...";
+                    break;
+                }
+            }
+            if (addedTermsCount === 0) {
+                approxString = `y(t) ≈ ${(a0_val / 2).toFixed(3)}`;
+            }
+
+            const approxEl = document.getElementById('math-eq-expanded-approx');
+            if (approxEl) {
+                approxEl.innerText = approxString;
+            }
+
             // Tip dot
             epicyclesGroup.append('circle')
                 .attr('cx', currentX)
@@ -436,15 +715,7 @@ export default function MathFourierVisualizer({
                 .attr('r', 3)
                 .attr('fill', '#f43f5e');
 
-            // Freeze the wave trace in place when paused to completely prevent flat segments
-            if (isPlayingRef.current || wavePoints.length === 0) {
-                wavePoints.unshift({ x: waveStartX, y: currentY });
-                if (wavePoints.length > waveHistoryLimit) {
-                    wavePoints.pop();
-                }
-            }
-
-            // Connector line
+            // Connector line (horizontal to the start of the mathematical plot at waveStartX)
             epicyclesGroup.append('line')
                 .attr('x1', currentX)
                 .attr('y1', currentY)
@@ -454,13 +725,33 @@ export default function MathFourierVisualizer({
                 .attr('stroke-dasharray', '4,4')
                 .attr('stroke-width', 1);
 
-            // Wave trace
-            waveGroup.selectAll('*').remove();
-            const propagatedPoints = wavePoints.map((pt, idx) => ({
-                x: pt.x + idx * (isMobile ? 0.6 : 1.0),
-                y: pt.y,
-            }));
+            // Dynamic wave generation as we move through time (scrolling history buffer)
+            const maxPoints = Math.max(50, Math.floor(waveWidth));
+            
+            // If playing, prepend the new tip value.
+            if (isPlayingRef.current) {
+                waveHistory.unshift(currentY);
+                if (waveHistory.length > maxPoints) {
+                    waveHistory.pop();
+                }
+            } else {
+                // If paused/stopped, pre-populate if empty to draw a premium flat baseline matching the tip height
+                if (waveHistory.length === 0) {
+                    for (let i = 0; i < maxPoints; i++) {
+                        waveHistory.push(currentY);
+                    }
+                }
+            }
 
+            waveGroup.selectAll('*').remove();
+            
+            const propagatedPoints: { x: number; y: number }[] = [];
+            for (let i = 0; i < waveHistory.length; i++) {
+                const x = waveStartX + i;
+                propagatedPoints.push({ x, y: waveHistory[i] });
+            }
+
+            // Render scrolling wave history with high precision (Linear interpolation to maintain sharp geometrical shapes)
             if (propagatedPoints.length > 2) {
                 waveGroup.append('path')
                     .datum(propagatedPoints)
@@ -470,35 +761,23 @@ export default function MathFourierVisualizer({
                     .attr('d', lineGenerator);
             }
 
-            // Probe dot
+            // Probe dot on the moving curve at waveStartX
             if (propagatedPoints.length > 0) {
                 waveGroup.append('circle')
-                    .attr('cx', propagatedPoints[0].x)
-                    .attr('cy', propagatedPoints[0].y)
+                    .attr('cx', waveStartX)
+                    .attr('cy', waveHistory[0])
                     .attr('r', 4)
                     .attr('fill', '#f43f5e')
                     .attr('class', 'animate-pulse');
             }
 
             if (isPlayingRef.current) {
-                // Dynamically scale time step by real-time pitch ratio for perfect visual speed syncing
                 const pitchRatio = fundamentalFrequency > 0 ? (f0_val / fundamentalFrequency) : 1.0;
                 const clampedRatio = Math.max(0.2, Math.min(5.0, pitchRatio));
                 timeRef.current += 0.02 * speedMultiplier * clampedRatio;
             }
             animationRef.current = requestAnimationFrame(drawLoop);
         };
-
-        // Gradient definition
-        const defs = svg.append('defs');
-        const grad = defs.append('linearGradient')
-            .attr('id', 'wave-gradient')
-            .attr('x1', '0%')
-            .attr('y1', '0%')
-            .attr('x2', '100%')
-            .attr('y2', '0%');
-        grad.append('stop').attr('offset', '0%').attr('stop-color', '#f43f5e');
-        grad.append('stop').attr('offset', '100%').attr('stop-color', '#8b5cf6');
 
         drawLoop();
 
@@ -507,7 +786,7 @@ export default function MathFourierVisualizer({
                 cancelAnimationFrame(animationRef.current);
             }
         };
-    }, [a0, an, bn, fundamentalFrequency, speedMultiplier, dimensions, audioRef]);
+    }, [a0, an, bn, fundamentalFrequency, resetSignal, speedMultiplier, dimensions, audioRef]);
 
     useEffect(() => {
         const cleanup = buildVisualization();
