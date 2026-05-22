@@ -3,7 +3,7 @@ const BASE_URL = 'http://localhost:8080';
 // helper to retrieve jwt token from local storage
 export const getAuthToken = (): string | null => {
     if (typeof window !== 'undefined') {
-        return localStorage.getitem('wf_token');
+        return localStorage.getItem('wf_token');
     }
     return null;
 };
@@ -33,7 +33,7 @@ export const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
 
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `HHTP error! status: ${response.status}`);
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
     }
     return response.json();
 }
