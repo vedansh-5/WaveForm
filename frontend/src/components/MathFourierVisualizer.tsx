@@ -4,6 +4,103 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import * as d3 from 'd3';
 import { Gauge } from 'lucide-react';
 
+// Real-Time Javascript-based Pitch Autocorrelation Tracker
+function detectPitchAutocorrelationInJS(samples: Float32Array, sampleRate: number) {
+    const n = samples.length;
+    if (n === 0) return { f0: 0, periodSamples: 0 };
+    
+    // Restrict frequency searching area to typical human pitch bounds: 80Hz - 1000Hz
+    const minPeriod = Math.floor(sampleRate / 1000);
+    const maxPeriod = Math.floor(sampleRate / 80);
+    const limit = Math.min(maxPeriod, n - 1);
+    
+    const r = new Float64Array(limit + 1);
+    // Compute autocorrelation coefficients: R(k) = sum(x[t] * x[t+k])
+    for (let k = 0; k <= limit; k++) {
+        let sum = 0;
+        for (let t = 0; t < n - k; t++) {
+            sum += samples[t] * samples[t + k];
+        }
+        r[k] = sum;
+    }
+    
+    // Find the peak of correlation past the initial zero-lag decay
+    let peakLag = 0;
+    let maxVal = -1.0;
+    let decayPhase = true;
+    for (let k = 1; k <= limit; k++) {
+        if (decayPhase) {
+            if (r[k] > r[k - 1]) {
+                decayPhase = false;
+            } else {
+                continue;
+            }
+        }
+        if (k >= minPeriod && r[k] > maxVal) {
+            maxVal = r[k];
+            peakLag = k;
+        }
+    }
+    
+    if (peakLag === 0) {
+        return { f0: 0, periodSamples: 0 };
+    }
+    const f0 = sampleRate / peakLag;
+    return { f0, periodSamples: peakLag };
+}
+
+// Real-Time 12-Harmonic Discrete Fourier Integrator
+function solveFourierSeriesInJS(
+    samples: Float32Array,
+    sampleRate: number,
+    harmonicsCount: number
+) {
+    const { f0, periodSamples } = detectPitchAutocorrelationInJS(samples, sampleRate);
+    
+    if (f0 < 40 || periodSamples <= 0 || periodSamples > samples.length) {
+        return null;
+    }
+    
+    // Find the first zero-crossing with positive slope for phase stability
+    let startIndex = 0;
+    for (let i = 0; i < samples.length - 1 - periodSamples; i++) {
+        if (samples[i] < 0 && samples[i + 1] >= 0) {
+            startIndex = i;
+            break;
+        }
+    }
+    
+    const L = periodSamples;
+    let sumA0 = 0;
+    for (let i = 0; i < L; i++) {
+        sumA0 += samples[startIndex + i];
+    }
+    const a0 = (2.0 / L) * sumA0;
+    
+    const an = new Float64Array(harmonicsCount);
+    const bn = new Float64Array(harmonicsCount);
+    
+    for (let n = 1; n <= harmonicsCount; n++) {
+        let sumCos = 0;
+        let sumSin = 0;
+        for (let i = 0; i < L; i++) {
+            const theta = (2.0 * Math.PI * n * i) / L;
+            const x = samples[startIndex + i];
+            sumCos += x * Math.cos(theta);
+            sumSin += x * Math.sin(theta);
+        }
+        an[n - 1] = (2.0 / L) * sumCos;
+        bn[n - 1] = (2.0 / L) * sumSin;
+    }
+    
+    return {
+        a0,
+        an: Array.from(an),
+        bn: Array.from(bn),
+        f0
+    };
+}
+
 interface VisualizerProps {
     a0: number;
     an: number[];
@@ -13,6 +110,7 @@ interface VisualizerProps {
     resetSignal: number;
     speedMultiplier: number;
     setSpeedMultiplier: (speed: number) => void;
+    audioRef?: React.RefObject<HTMLAudioElement | null>;
 }
 
 export default function MathFourierVisualizer({
@@ -23,7 +121,8 @@ export default function MathFourierVisualizer({
     isPlaying,
     resetSignal,
     speedMultiplier,
-    setSpeedMultiplier
+    setSpeedMultiplier,
+    audioRef
 }: VisualizerProps) {
     const containerRef = useRef<HTMLDivElement>(null);
     const [dimensions, setDimensions] = useState({ width: 600, height: 400 });
@@ -50,7 +149,6 @@ export default function MathFourierVisualizer({
         const observer = new ResizeObserver((entries) => {
             for (const entry of entries) {
                 const w = entry.contentRect.width;
-                // Maintain a responsive aspect ratio
                 const h = Math.max(280, Math.min(420, w * 0.55));
                 setDimensions({ width: Math.floor(w), height: Math.floor(h) });
             }
@@ -78,25 +176,6 @@ export default function MathFourierVisualizer({
         const epicyclesGroup = svg.append('g');
         const waveGroup = svg.append('g');
 
-        // Build harmonic circle descriptors
-        const circles: { radius: number; freq: number; phase: number }[] = [];
-        const N = an.length;
-        const maxAmplitude = Math.max(...an.map(Math.abs), ...bn.map(Math.abs), 0.01);
-        const maxRadius = isMobile ? 50 : 80;
-        const scaleFactor = maxRadius / maxAmplitude;
-
-        for (let i = 0; i < N; i++) {
-            const n = i + 1;
-            const a = an[i] * scaleFactor;
-            const b = bn[i] * scaleFactor;
-            const radius = Math.sqrt(a * a + b * b);
-            const phase = Math.atan2(b, a);
-            if (radius > 0.5) {
-                circles.push({ radius, freq: n, phase });
-            }
-        }
-        circles.sort((a, b) => b.radius - a.radius);
-
         const waveHistoryLimit = Math.floor(width * 0.5);
 
         const lineGenerator = d3.line<{ x: number; y: number }>()
@@ -108,11 +187,168 @@ export default function MathFourierVisualizer({
             const time = timeRef.current;
             const wavePoints = wavePointsRef.current;
 
+            // Step 1: Resolve smooth real-time or static frequency & volume variables
+            let a0_val = a0;
+            let an_val = [...an];
+            let bn_val = [...bn];
+            let f0_val = fundamentalFrequency;
+
+            if (isPlayingRef.current && audioRef?.current) {
+                const audioEl = audioRef.current;
+                let analyser = (audioEl as any)._audioAnalyser as AnalyserNode | undefined;
+                if (!analyser) {
+                    try {
+                        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+                        const audioCtx = new AudioContextClass();
+                        analyser = audioCtx.createAnalyser();
+                        analyser.fftSize = 2048;
+                        
+                        const source = audioCtx.createMediaElementSource(audioEl);
+                        source.connect(analyser);
+                        analyser.connect(audioCtx.destination);
+                        
+                        (audioEl as any)._audioContext = audioCtx;
+                        (audioEl as any)._audioSourceNode = source;
+                        (audioEl as any)._audioAnalyser = analyser;
+                    } catch (e) {
+                        console.error("Error setting up audio analyser:", e);
+                    }
+                }
+
+                if (analyser) {
+                    const audioCtx = (audioEl as any)._audioContext as AudioContext;
+                    if (audioCtx && audioCtx.state === 'suspended') {
+                        audioCtx.resume();
+                    }
+
+                    const bufferLength = analyser.frequencyBinCount;
+                    const dataArray = new Float32Array(bufferLength);
+                    analyser.getFloatTimeDomainData(dataArray);
+
+                    // Compute RMS energy (volume)
+                    let rms = 0;
+                    for (let i = 0; i < bufferLength; i++) {
+                        rms += dataArray[i] * dataArray[i];
+                    }
+                    rms = Math.sqrt(rms / bufferLength);
+
+                    // Track smooth RMS
+                    if ((audioEl as any)._smoothRMS === undefined) {
+                        (audioEl as any)._smoothRMS = rms;
+                    } else {
+                        (audioEl as any)._smoothRMS = (audioEl as any)._smoothRMS * 0.8 + rms * 0.2;
+                    }
+
+                    const smoothVolume = (audioEl as any)._smoothRMS || 0;
+
+                    if (smoothVolume > 0.005) {
+                        const result = solveFourierSeriesInJS(dataArray, audioCtx.sampleRate, an.length);
+                        if (result) {
+                            // Apply smooth exponential moving average to coefficients and frequency
+                            if ((audioEl as any)._prevA0 === undefined) {
+                                (audioEl as any)._prevA0 = result.a0;
+                                (audioEl as any)._prevAn = result.an;
+                                (audioEl as any)._prevBn = result.bn;
+                                (audioEl as any)._prevF0 = result.f0;
+                            } else {
+                                const beta = 0.25; // smoothing factor to balance responsiveness and stability
+                                (audioEl as any)._prevA0 = (audioEl as any)._prevA0 * (1 - beta) + result.a0 * beta;
+                                (audioEl as any)._prevF0 = (audioEl as any)._prevF0 * (1 - beta) + result.f0 * beta;
+                                for (let i = 0; i < an.length; i++) {
+                                    (audioEl as any)._prevAn[i] = (audioEl as any)._prevAn[i] * (1 - beta) + result.an[i] * beta;
+                                    (audioEl as any)._prevBn[i] = (audioEl as any)._prevBn[i] * (1 - beta) + result.bn[i] * beta;
+                                }
+                            }
+                            
+                            a0_val = (audioEl as any)._prevA0;
+                            an_val = [...(audioEl as any)._prevAn];
+                            bn_val = [...(audioEl as any)._prevBn];
+                            f0_val = (audioEl as any)._prevF0;
+                        } else {
+                            // If pitch detection fails (e.g. noise/transients), scale the static coefficients by volume as a fallback
+                            const volumeScale = Math.min(2.0, Math.max(0.15, smoothVolume / 0.12));
+                            a0_val = a0 * volumeScale;
+                            an_val = an.map(v => v * volumeScale);
+                            bn_val = bn.map(v => v * volumeScale);
+                        }
+                    } else {
+                        // Silent: collapse circles to zero and flatten wave to a straight line
+                        a0_val = 0;
+                        an_val = an.map(() => 0);
+                        bn_val = bn.map(() => 0);
+                        f0_val = 0;
+                    }
+                }
+            } else if (!isPlayingRef.current && audioRef?.current) {
+                // Reset smooth history when paused or stopped
+                const audioEl = audioRef.current;
+                (audioEl as any)._smoothF0 = undefined;
+                (audioEl as any)._smoothRMS = undefined;
+                (audioEl as any)._prevA0 = undefined;
+                (audioEl as any)._prevAn = undefined;
+                (audioEl as any)._prevBn = undefined;
+                (audioEl as any)._prevF0 = undefined;
+            }
+
+            // Step 2: Build harmonic circle descriptors based on computed clean coefficients
+            const circles: { radius: number; freq: number; phase: number }[] = [];
+            const N = an_val.length;
+            const maxAmplitude = Math.max(...an_val.map(Math.abs), ...bn_val.map(Math.abs), 0.01);
+            const maxRadius = isMobile ? 50 : 80;
+            const scaleFactor = maxRadius / maxAmplitude;
+
+            for (let i = 0; i < N; i++) {
+                const n = i + 1;
+                const a = an_val[i] * scaleFactor;
+                const b = bn_val[i] * scaleFactor;
+                const radius = Math.sqrt(a * a + b * b);
+                const phase = Math.atan2(b, a);
+                if (radius > 0.5) {
+                    circles.push({ radius, freq: n, phase });
+                }
+            }
+            circles.sort((a, b) => b.radius - a.radius);
+
+            // Step 3: Draw D3 epicycles
             let currentX = centerX;
-            let currentY = centerY + (a0 * scaleFactor * 0.5);
+            let currentY = centerY + (a0_val * scaleFactor * 0.5);
             epicyclesGroup.selectAll('*').remove();
 
-            let xtVal = a0 / 2;
+            let xtVal = a0_val / 2;
+
+            // Dynamically update fundamental frequency labels in DOM
+            const f0El = document.getElementById('realtime-f0-val');
+            if (f0El) {
+                f0El.innerText = `${f0_val.toFixed(1)} Hz`;
+            }
+            const f0EqEl = document.getElementById('realtime-f0-eq-val');
+            if (f0EqEl) {
+                f0EqEl.innerText = f0_val.toFixed(1);
+            }
+
+            // Dynamically update DC Offset constant term in DOM
+            const dcEl = document.getElementById('realtime-dc-val');
+            if (dcEl) {
+                dcEl.innerText = (a0_val / 2).toFixed(6);
+            }
+            const eqDcEl = document.getElementById('realtime-eq-dc');
+            if (eqDcEl) {
+                eqDcEl.innerText = (a0_val / 2).toFixed(4);
+            }
+
+            // Dynamically update the header mathematical equation's first 2 harmonics
+            for (let n = 1; n <= 2; n++) {
+                const a_n_val = an_val[n - 1] || 0;
+                const b_n_val = bn_val[n - 1] || 0;
+                const eqCosEl = document.getElementById(`realtime-eq-cos-${n}`);
+                if (eqCosEl) {
+                    eqCosEl.innerText = `(${a_n_val >= 0 ? '+' : ''}${a_n_val.toFixed(4)})`;
+                }
+                const eqSinEl = document.getElementById(`realtime-eq-sin-${n}`);
+                if (eqSinEl) {
+                    eqSinEl.innerText = `(${b_n_val >= 0 ? '+' : ''}${b_n_val.toFixed(4)})`;
+                }
+            }
 
             circles.forEach((circle, idx) => {
                 const prevX = currentX;
@@ -121,15 +357,14 @@ export default function MathFourierVisualizer({
                 currentX += circle.radius * Math.cos(angle);
                 currentY += circle.radius * Math.sin(angle);
 
-                // calculate the math value of this harmonic (unscaled)
                 const n = circle.freq;
-                const a_n = an[n - 1] || 0;
-                const b_n = bn[n - 1] || 0;
-                const cosTerm = a_n * Math.cos(n * time);
-                const sinTerm = b_n * Math.sin(n * time);
+                const a_n_val = an_val[n - 1] || 0;
+                const b_n_val = bn_val[n - 1] || 0;
+                const cosTerm = a_n_val * Math.cos(n * time);
+                const sinTerm = b_n_val * Math.sin(n * time);
                 xtVal += cosTerm + sinTerm;
 
-                // Update individual dynamic equation elements in the DOM
+                // Update individual dynamic evaluation elements in the DOM
                 const cosEl = document.getElementById(`realtime-cos-val-${n}`);
                 if (cosEl) {
                     cosEl.innerText = (cosTerm >= 0 ? '+' : '') + cosTerm.toFixed(6);
@@ -145,6 +380,24 @@ export default function MathFourierVisualizer({
                 const sinEqEl = document.getElementById(`realtime-sin-val-eq-${n}`);
                 if (sinEqEl) {
                     sinEqEl.innerText = (sinTerm >= 0 ? '+' : '') + sinTerm.toFixed(6);
+                }
+
+                // Update dynamic coefficient constant values in DOM
+                const cosCoeffEqEl = document.getElementById(`realtime-cos-coeff-eq-${n}`);
+                if (cosCoeffEqEl) {
+                    cosCoeffEqEl.innerText = `(${a_n_val.toFixed(4)})`;
+                }
+                const sinCoeffEqEl = document.getElementById(`realtime-sin-coeff-eq-${n}`);
+                if (sinCoeffEqEl) {
+                    sinCoeffEqEl.innerText = `(${b_n_val.toFixed(4)})`;
+                }
+                const cosCoeffEl = document.getElementById(`realtime-cos-coeff-${n}`);
+                if (cosCoeffEl) {
+                    cosCoeffEl.innerText = `(${a_n_val >= 0 ? '+' : ''}${a_n_val.toFixed(4)})`;
+                }
+                const sinCoeffEl = document.getElementById(`realtime-sin-coeff-${n}`);
+                if (sinCoeffEl) {
+                    sinCoeffEl.innerText = `(${b_n_val >= 0 ? '+' : ''}${b_n_val.toFixed(4)})`;
                 }
 
                 // Orbit ring
@@ -183,9 +436,12 @@ export default function MathFourierVisualizer({
                 .attr('r', 3)
                 .attr('fill', '#f43f5e');
 
-            wavePoints.unshift({ x: waveStartX, y: currentY });
-            if (wavePoints.length > waveHistoryLimit) {
-                wavePoints.pop();
+            // Freeze the wave trace in place when paused to completely prevent flat segments
+            if (isPlayingRef.current || wavePoints.length === 0) {
+                wavePoints.unshift({ x: waveStartX, y: currentY });
+                if (wavePoints.length > waveHistoryLimit) {
+                    wavePoints.pop();
+                }
             }
 
             // Connector line
@@ -225,7 +481,10 @@ export default function MathFourierVisualizer({
             }
 
             if (isPlayingRef.current) {
-                timeRef.current += 0.02 * speedMultiplier;
+                // Dynamically scale time step by real-time pitch ratio for perfect visual speed syncing
+                const pitchRatio = fundamentalFrequency > 0 ? (f0_val / fundamentalFrequency) : 1.0;
+                const clampedRatio = Math.max(0.2, Math.min(5.0, pitchRatio));
+                timeRef.current += 0.02 * speedMultiplier * clampedRatio;
             }
             animationRef.current = requestAnimationFrame(drawLoop);
         };
@@ -248,7 +507,7 @@ export default function MathFourierVisualizer({
                 cancelAnimationFrame(animationRef.current);
             }
         };
-    }, [a0, an, bn, speedMultiplier, dimensions]);
+    }, [a0, an, bn, fundamentalFrequency, speedMultiplier, dimensions, audioRef]);
 
     useEffect(() => {
         const cleanup = buildVisualization();
@@ -262,7 +521,7 @@ export default function MathFourierVisualizer({
                 <div>
                     <h3 className="text-sm font-bold text-white uppercase tracking-wider">Fourier Series Epicycles</h3>
                     <p className="text-[11px] text-zinc-500 mt-1 font-mono">
-                        f₀ = <span className="text-violet-400">{fundamentalFrequency.toFixed(1)} Hz</span>
+                        f₀ = <span id="realtime-f0-val" className="text-violet-400">{fundamentalFrequency.toFixed(1)} Hz</span>
                     </p>
                 </div>
 

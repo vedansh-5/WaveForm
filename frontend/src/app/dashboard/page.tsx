@@ -474,6 +474,7 @@ export default function DashboardPage() {
                                     resetSignal={resetSignal}
                                     speedMultiplier={speedMultiplier}
                                     setSpeedMultiplier={setSpeedMultiplier}
+                                    audioRef={audioRef}
                                 />
 
                                 {/* Unified Audio Control Deck */}
@@ -555,6 +556,7 @@ export default function DashboardPage() {
                                         <audio
                                             ref={audioRef}
                                             src={getAudioUrl(selectedWave.recording.file_path)}
+                                            crossOrigin="anonymous"
                                             onTimeUpdate={handleTimeUpdate}
                                             onLoadedMetadata={handleLoadedMetadata}
                                             onEnded={handleAudioEnded}
@@ -576,23 +578,40 @@ export default function DashboardPage() {
                                              <div className="absolute -top-12 -left-12 w-24 h-24 rounded-full bg-violet-500/10 blur-xl pointer-events-none" />
 
                                              <div className="relative z-10 space-y-4">
-                                                 {/* Header / Focal Equation */}
-                                                 <div className="text-2xl font-extrabold tracking-tight text-white font-mono flex items-center justify-center flex-wrap gap-2">
-                                                     <span>x(t) ≈</span>
-                                                     <span id="realtime-x-val" className="text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-fuchsia-400 border-b-2 border-violet-500/30 pb-0.5 px-2 tabular-nums">
-                                                         {(selectedWave.equation.a_0 / 2).toFixed(6)}
-                                                     </span>
+                                                 {/* Mathematical Formula Display - Realtime Equation Representation */}
+                                                 <div className="p-4 rounded-xl bg-violet-950/15 border border-violet-500/10 font-mono text-[11px] sm:text-xs text-zinc-200 overflow-x-auto whitespace-nowrap scrollbar-none flex items-center justify-center gap-2 py-3.5 shadow-inner">
+                                                     <span className="text-zinc-500 font-bold shrink-0">x(t) ≈</span>
+                                                     <span id="realtime-eq-dc" className="text-violet-400 font-extrabold tabular-nums shrink-0">{(selectedWave.equation.a_0 / 2).toFixed(4)}</span>
+                                                     
+                                                     <span className="text-zinc-600 font-bold shrink-0">+</span>
+                                                     <span id="realtime-eq-cos-1" className="text-fuchsia-400 font-extrabold tabular-nums shrink-0">({selectedWave.equation.a_n[0].toFixed(4)})</span>
+                                                     <span className="text-zinc-400 shrink-0">·cos(ω₀t)</span>
+                                                     
+                                                     <span className="text-zinc-600 font-bold shrink-0">+</span>
+                                                     <span id="realtime-eq-sin-1" className="text-emerald-400 font-extrabold tabular-nums shrink-0">({selectedWave.equation.b_n[0].toFixed(4)})</span>
+                                                     <span className="text-zinc-400 shrink-0">·sin(ω₀t)</span>
+                                                     
+                                                     <span className="text-zinc-600 font-bold shrink-0">+</span>
+                                                     <span id="realtime-eq-cos-2" className="text-fuchsia-400 font-extrabold tabular-nums shrink-0">({selectedWave.equation.a_n[1].toFixed(4)})</span>
+                                                     <span className="text-zinc-400 shrink-0">·cos(2ω₀t)</span>
+                                                     
+                                                     <span className="text-zinc-600 font-bold shrink-0">+</span>
+                                                     <span id="realtime-eq-sin-2" className="text-emerald-400 font-extrabold tabular-nums shrink-0">({selectedWave.equation.b_n[1].toFixed(4)})</span>
+                                                     <span className="text-zinc-400 shrink-0">·sin(2ω₀t)</span>
+                                                     
+                                                     <span className="text-zinc-600 font-extrabold shrink-0">+ ...</span>
                                                  </div>
 
-                                                 <div className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold font-mono">
-                                                     Expanded Fourier Series Equation (12 Harmonics)
+                                                 <div className="flex flex-col sm:flex-row sm:items-center justify-between text-[10px] text-zinc-500 uppercase tracking-widest font-bold font-mono px-1 gap-1">
+                                                     <span>Active Sum: <span id="realtime-x-val" className="text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-fuchsia-400 tabular-nums">{(selectedWave.equation.a_0 / 2).toFixed(6)}</span></span>
+                                                     <span>Expanded Harmonic Terms (12 Harmonics)</span>
                                                  </div>
 
                                                  {/* Beautifully Styled, Scrollable Harmonic Equation list */}
                                                  <div className="bg-[#08080c]/80 border border-white/[0.04] rounded-xl p-4 font-mono text-[11px] text-zinc-300 max-h-[160px] overflow-y-auto space-y-2.5 text-left custom-scrollbar scrollbar-thin">
                                                      <div className="border-b border-white/[0.04] pb-2 text-[10px] text-zinc-500 flex items-center justify-between">
                                                          <span>CONSTANT TERM (DC OFFSET)</span>
-                                                         <span className="text-violet-400 font-bold">{(selectedWave.equation.a_0 / 2).toFixed(6)}</span>
+                                                         <span id="realtime-dc-val" className="text-violet-400 font-bold">{(selectedWave.equation.a_0 / 2).toFixed(6)}</span>
                                                      </div>
                                                      
                                                      {selectedWave.equation.a_n.map((_, idx) => {
@@ -603,14 +622,14 @@ export default function DashboardPage() {
                                                              <div key={idx} className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 py-1.5 border-b border-white/[0.02] last:border-0">
                                                                  <div className="flex items-center gap-1.5 truncate">
                                                                      <span className="text-zinc-600 font-bold shrink-0">H{n}:</span>
-                                                                     <span className="text-fuchsia-400 text-[10px] font-semibold shrink-0">({a_n.toFixed(4)})</span>
+                                                                     <span id={`realtime-cos-coeff-eq-${n}`} className="text-fuchsia-400 text-[10px] font-semibold shrink-0">({a_n.toFixed(4)})</span>
                                                                      <span className="text-zinc-400 font-semibold shrink-0">· cos({n}ω₀t)</span>
                                                                      <span id={`realtime-cos-val-eq-${n}`} className="text-violet-400 font-bold tabular-nums">
                                                                          +0.000000
                                                                      </span>
                                                                  </div>
                                                                  <div className="flex items-center gap-1.5 truncate sm:ml-auto">
-                                                                     <span className="text-emerald-400 text-[10px] font-semibold shrink-0">({b_n.toFixed(4)})</span>
+                                                                     <span id={`realtime-sin-coeff-eq-${n}`} className="text-emerald-400 text-[10px] font-semibold shrink-0">({b_n.toFixed(4)})</span>
                                                                      <span className="text-zinc-400 font-semibold shrink-0">· sin({n}ω₀t)</span>
                                                                      <span id={`realtime-sin-val-eq-${n}`} className="text-teal-400 font-bold tabular-nums">
                                                                          +0.000000
@@ -623,7 +642,7 @@ export default function DashboardPage() {
 
                                                  {/* Bottom Metadata */}
                                                  <div className="text-[10px] text-zinc-500 mt-2 font-mono flex items-center justify-center gap-4 border-t border-white/[0.04] pt-3">
-                                                     <span>ω₀ = 2π · {selectedWave.equation.fundamental_frequency.toFixed(1)} Hz</span>
+                                                     <span>ω₀ = 2π · <span id="realtime-f0-eq-val">{selectedWave.equation.fundamental_frequency.toFixed(1)}</span> Hz</span>
                                                      <span className="text-zinc-700">|</span>
                                                      <span>t = <span id="realtime-t-val" className="text-zinc-300">0.00</span>s</span>
                                                  </div>
@@ -666,7 +685,7 @@ export default function DashboardPage() {
                                                                 <div key={idx} className="flex justify-between items-center py-2 px-3 rounded-lg bg-white/[0.015] hover:bg-white/[0.03] transition-colors border border-white/[0.02] text-[11px] font-mono">
                                                                     <div className="flex items-center gap-2">
                                                                         <span className="text-zinc-600">n = {idx + 1}</span>
-                                                                        <span className="text-[9px] text-zinc-500">({val >= 0 ? '+' : ''}{val.toFixed(4)})</span>
+                                                                        <span id={`realtime-cos-coeff-${idx + 1}`} className="text-[9px] text-zinc-500">({val >= 0 ? '+' : ''}{val.toFixed(4)})</span>
                                                                     </div>
                                                                     <span id={`realtime-cos-val-${idx + 1}`} className={`font-semibold ${val >= 0 ? 'text-violet-400' : 'text-fuchsia-400'}`}>
                                                                         {val >= 0 ? '+' : ''}{val.toFixed(6)}
@@ -687,7 +706,7 @@ export default function DashboardPage() {
                                                                 <div key={idx} className="flex justify-between items-center py-2 px-3 rounded-lg bg-white/[0.015] hover:bg-white/[0.03] transition-colors border border-white/[0.02] text-[11px] font-mono">
                                                                     <div className="flex items-center gap-2">
                                                                         <span className="text-zinc-600">n = {idx + 1}</span>
-                                                                        <span className="text-[9px] text-zinc-500">({val >= 0 ? '+' : ''}{val.toFixed(4)})</span>
+                                                                        <span id={`realtime-sin-coeff-${idx + 1}`} className="text-[9px] text-zinc-500">({val >= 0 ? '+' : ''}{val.toFixed(4)})</span>
                                                                     </div>
                                                                     <span id={`realtime-sin-val-${idx + 1}`} className={`font-semibold ${val >= 0 ? 'text-emerald-400' : 'text-teal-400'}`}>
                                                                         {val >= 0 ? '+' : ''}{val.toFixed(6)}

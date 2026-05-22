@@ -192,7 +192,7 @@ func WriteWAV(w io.Writer, wave *WaveData) error {
 			val = -32768.0
 		}
 		rawSample := int16(val)
-		binary.LittleEndian.PutUint16(rawBytes[i*2:(i*2)+2], uint32(rawSample))
+		binary.LittleEndian.PutUint16(rawBytes[i*2:(i*2)+2], uint16(rawSample))
 	}
 
 	if _, err := w.Write(rawBytes); err != nil {
