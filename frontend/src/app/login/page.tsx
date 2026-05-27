@@ -2,7 +2,7 @@
 
 import { apiFetch, setAuthSession } from '@/lib/api';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Mail, Lock, User, ArrowRight, Loader2 } from 'lucide-react';
 
 export default function LoginPage() {
@@ -14,6 +14,24 @@ export default function LoginPage() {
     const [name, setName] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+
+    // Session auto-redirect check
+    useEffect(() => {
+        const checkSession = async () => {
+            const token = localStorage.getItem('wf_token');
+            if (token) {
+                try {
+                    // Try fetching user profile to verify if session is still valid
+                    await apiFetch('/me');
+                    router.push('/dashboard');
+                } catch (err) {
+                    // Invalid/expired token: clear it from storage silently
+                    localStorage.removeItem('wf_token');
+                }
+            }
+        };
+        checkSession();
+    }, [router]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();

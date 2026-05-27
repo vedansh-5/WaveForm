@@ -4,102 +4,7 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import * as d3 from 'd3';
 import { Gauge } from 'lucide-react';
 
-// Real-Time Javascript-based Pitch Autocorrelation Tracker
-function detectPitchAutocorrelationInJS(samples: Float32Array, sampleRate: number) {
-    const n = samples.length;
-    if (n === 0) return { f0: 0, periodSamples: 0 };
-    
-    // Restrict frequency searching area to typical human pitch bounds: 80Hz - 1000Hz
-    const minPeriod = Math.floor(sampleRate / 1000);
-    const maxPeriod = Math.floor(sampleRate / 80);
-    const limit = Math.min(maxPeriod, n - 1);
-    
-    const r = new Float64Array(limit + 1);
-    // Compute autocorrelation coefficients: R(k) = sum(x[t] * x[t+k])
-    for (let k = 0; k <= limit; k++) {
-        let sum = 0;
-        for (let t = 0; t < n - k; t++) {
-            sum += samples[t] * samples[t + k];
-        }
-        r[k] = sum;
-    }
-    
-    // Find the peak of correlation past the initial zero-lag decay
-    let peakLag = 0;
-    let maxVal = -1.0;
-    let decayPhase = true;
-    for (let k = 1; k <= limit; k++) {
-        if (decayPhase) {
-            if (r[k] > r[k - 1]) {
-                decayPhase = false;
-            } else {
-                continue;
-            }
-        }
-        if (k >= minPeriod && r[k] > maxVal) {
-            maxVal = r[k];
-            peakLag = k;
-        }
-    }
-    
-    if (peakLag === 0) {
-        return { f0: 0, periodSamples: 0 };
-    }
-    const f0 = sampleRate / peakLag;
-    return { f0, periodSamples: peakLag };
-}
 
-// Real-Time 12-Harmonic Discrete Fourier Integrator
-function solveFourierSeriesInJS(
-    samples: Float32Array,
-    sampleRate: number,
-    harmonicsCount: number
-) {
-    const { f0, periodSamples } = detectPitchAutocorrelationInJS(samples, sampleRate);
-    
-    if (f0 < 40 || periodSamples <= 0 || periodSamples > samples.length) {
-        return null;
-    }
-    
-    // Find the first zero-crossing with positive slope for phase stability
-    let startIndex = 0;
-    for (let i = 0; i < samples.length - 1 - periodSamples; i++) {
-        if (samples[i] < 0 && samples[i + 1] >= 0) {
-            startIndex = i;
-            break;
-        }
-    }
-    
-    const L = periodSamples;
-    let sumA0 = 0;
-    for (let i = 0; i < L; i++) {
-        sumA0 += samples[startIndex + i];
-    }
-    const a0 = (2.0 / L) * sumA0;
-    
-    const an = new Float64Array(harmonicsCount);
-    const bn = new Float64Array(harmonicsCount);
-    
-    for (let n = 1; n <= harmonicsCount; n++) {
-        let sumCos = 0;
-        let sumSin = 0;
-        for (let i = 0; i < L; i++) {
-            const theta = (2.0 * Math.PI * n * i) / L;
-            const x = samples[startIndex + i];
-            sumCos += x * Math.cos(theta);
-            sumSin += x * Math.sin(theta);
-        }
-        an[n - 1] = (2.0 / L) * sumCos;
-        bn[n - 1] = (2.0 / L) * sumSin;
-    }
-    
-    return {
-        a0,
-        an: Array.from(an),
-        bn: Array.from(bn),
-        f0
-    };
-}
 
 // Dynamic Waveform Classification & Textbook Formula Builder
 function classifyWaveform(an: number[], bn: number[]): { name: string; formulaHTML: string } {
@@ -381,7 +286,7 @@ export default function MathFourierVisualizer({
         // Draw static textbook coordinate axes
         const axesColor = 'rgba(255, 255, 255, 0.12)';
         const waveWidth = width - 40 - waveStartX;
-        const waveHistory: number[] = [];
+        let revealProgress = 0;
 
         // t-axis (horizontal)
         axesGroup.append('line')
@@ -431,102 +336,7 @@ export default function MathFourierVisualizer({
             let bn_val = [...bn];
             let f0_val = fundamentalFrequency;
 
-            if (isPlayingRef.current && audioRef?.current) {
-                const audioEl = audioRef.current;
-                let analyser = (audioEl as any)._audioAnalyser as AnalyserNode | undefined;
-                if (!analyser) {
-                    try {
-                        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-                        const audioCtx = new AudioContextClass();
-                        analyser = audioCtx.createAnalyser();
-                        analyser.fftSize = 2048;
-                        
-                        const source = audioCtx.createMediaElementSource(audioEl);
-                        source.connect(analyser);
-                        analyser.connect(audioCtx.destination);
-                        
-                        (audioEl as any)._audioContext = audioCtx;
-                        (audioEl as any)._audioSourceNode = source;
-                        (audioEl as any)._audioAnalyser = analyser;
-                    } catch (e) {
-                        console.error("Error setting up audio analyser:", e);
-                    }
-                }
 
-                if (analyser) {
-                    const audioCtx = (audioEl as any)._audioContext as AudioContext;
-                    if (audioCtx && audioCtx.state === 'suspended') {
-                        audioCtx.resume();
-                    }
-
-                    const bufferLength = analyser.frequencyBinCount;
-                    const dataArray = new Float32Array(bufferLength);
-                    analyser.getFloatTimeDomainData(dataArray);
-
-                    // Compute RMS energy (volume)
-                    let rms = 0;
-                    for (let i = 0; i < bufferLength; i++) {
-                        rms += dataArray[i] * dataArray[i];
-                    }
-                    rms = Math.sqrt(rms / bufferLength);
-
-                    // Track smooth RMS
-                    if ((audioEl as any)._smoothRMS === undefined) {
-                        (audioEl as any)._smoothRMS = rms;
-                    } else {
-                        (audioEl as any)._smoothRMS = (audioEl as any)._smoothRMS * 0.8 + rms * 0.2;
-                    }
-
-                    const smoothVolume = (audioEl as any)._smoothRMS || 0;
-
-                    if (smoothVolume > 0.005) {
-                        const result = solveFourierSeriesInJS(dataArray, audioCtx.sampleRate, an.length);
-                        if (result) {
-                            // Apply smooth exponential moving average to coefficients and frequency
-                            if ((audioEl as any)._prevA0 === undefined) {
-                                (audioEl as any)._prevA0 = result.a0;
-                                (audioEl as any)._prevAn = result.an;
-                                (audioEl as any)._prevBn = result.bn;
-                                (audioEl as any)._prevF0 = result.f0;
-                            } else {
-                                const beta = 0.25; // smoothing factor to balance responsiveness and stability
-                                (audioEl as any)._prevA0 = (audioEl as any)._prevA0 * (1 - beta) + result.a0 * beta;
-                                (audioEl as any)._prevF0 = (audioEl as any)._prevF0 * (1 - beta) + result.f0 * beta;
-                                for (let i = 0; i < an.length; i++) {
-                                    (audioEl as any)._prevAn[i] = (audioEl as any)._prevAn[i] * (1 - beta) + result.an[i] * beta;
-                                    (audioEl as any)._prevBn[i] = (audioEl as any)._prevBn[i] * (1 - beta) + result.bn[i] * beta;
-                                }
-                            }
-                            
-                            a0_val = (audioEl as any)._prevA0;
-                            an_val = [...(audioEl as any)._prevAn];
-                            bn_val = [...(audioEl as any)._prevBn];
-                            f0_val = (audioEl as any)._prevF0;
-                        } else {
-                            // If pitch detection fails (e.g. noise/transients), scale the static coefficients by volume as a fallback
-                            const volumeScale = Math.min(2.0, Math.max(0.15, smoothVolume / 0.12));
-                            a0_val = a0 * volumeScale;
-                            an_val = an.map(v => v * volumeScale);
-                            bn_val = bn.map(v => v * volumeScale);
-                        }
-                    } else {
-                        // Silent: collapse circles to zero and flatten wave to a straight line
-                        a0_val = 0;
-                        an_val = an.map(() => 0);
-                        bn_val = bn.map(() => 0);
-                        f0_val = 0;
-                    }
-                }
-            } else if (!isPlayingRef.current && audioRef?.current) {
-                // Reset smooth history when paused or stopped
-                const audioEl = audioRef.current;
-                (audioEl as any)._smoothF0 = undefined;
-                (audioEl as any)._smoothRMS = undefined;
-                (audioEl as any)._prevA0 = undefined;
-                (audioEl as any)._prevAn = undefined;
-                (audioEl as any)._prevBn = undefined;
-                (audioEl as any)._prevF0 = undefined;
-            }
 
             // Step 2: Build harmonic circle descriptors based on computed clean coefficients
             const circles: { radius: number; freq: number; phase: number }[] = [];
@@ -725,34 +535,36 @@ export default function MathFourierVisualizer({
                 .attr('stroke-dasharray', '4,4')
                 .attr('stroke-width', 1);
 
-            // Dynamic wave generation as we move through time (scrolling history buffer)
-            const maxPoints = Math.max(50, Math.floor(waveWidth));
-            
-            // If playing, prepend the new tip value.
-            if (isPlayingRef.current) {
-                waveHistory.unshift(currentY);
-                if (waveHistory.length > maxPoints) {
-                    waveHistory.pop();
-                }
-            } else {
-                // If paused/stopped, pre-populate if empty to draw a premium flat baseline matching the tip height
-                if (waveHistory.length === 0) {
-                    for (let i = 0; i < maxPoints; i++) {
-                        waveHistory.push(currentY);
-                    }
-                }
-            }
-
+            // Pristine Mathematical Function Plotting evaluated using the current frame's coefficients
             waveGroup.selectAll('*').remove();
             
             const propagatedPoints: { x: number; y: number }[] = [];
-            for (let i = 0; i < waveHistory.length; i++) {
-                const x = waveStartX + i;
-                propagatedPoints.push({ x, y: waveHistory[i] });
+            const sampleCount = 250;
+            const spanAngle = 3 * 2 * Math.PI; // exactly 3 periods (6 * PI)
+
+            for (let i = 0; i <= sampleCount; i++) {
+                const fraction = i / sampleCount;
+                
+                // Only draw up to revealProgress
+                if (fraction > revealProgress && revealProgress < 0.999) {
+                    continue;
+                }
+
+                const x = waveStartX + fraction * waveWidth;
+                
+                // Animate wave moving to the right: subtract spatial phase from time
+                const theta = time - fraction * spanAngle;
+                
+                let ySum = centerY + (a0_val * scaleFactor * 0.5);
+                circles.forEach((circle) => {
+                    ySum += circle.radius * Math.sin(circle.freq * theta + circle.phase);
+                });
+                
+                propagatedPoints.push({ x, y: ySum });
             }
 
-            // Render scrolling wave history with high precision (Linear interpolation to maintain sharp geometrical shapes)
-            if (propagatedPoints.length > 2) {
+            // Render scrolling wave mathematically with linear interpolation to maintain sharp geometric shapes
+            if (propagatedPoints.length > 1) {
                 waveGroup.append('path')
                     .datum(propagatedPoints)
                     .attr('fill', 'none')
@@ -764,8 +576,8 @@ export default function MathFourierVisualizer({
             // Probe dot on the moving curve at waveStartX
             if (propagatedPoints.length > 0) {
                 waveGroup.append('circle')
-                    .attr('cx', waveStartX)
-                    .attr('cy', waveHistory[0])
+                    .attr('cx', propagatedPoints[0].x)
+                    .attr('cy', propagatedPoints[0].y)
                     .attr('r', 4)
                     .attr('fill', '#f43f5e')
                     .attr('class', 'animate-pulse');
@@ -775,6 +587,8 @@ export default function MathFourierVisualizer({
                 const pitchRatio = fundamentalFrequency > 0 ? (f0_val / fundamentalFrequency) : 1.0;
                 const clampedRatio = Math.max(0.2, Math.min(5.0, pitchRatio));
                 timeRef.current += 0.02 * speedMultiplier * clampedRatio;
+                // Increment reveal progress smoothly
+                revealProgress = Math.min(1.0, revealProgress + 0.0035 * speedMultiplier * clampedRatio);
             }
             animationRef.current = requestAnimationFrame(drawLoop);
         };
