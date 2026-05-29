@@ -56,7 +56,8 @@ export default function DashboardPage() {
     const getAudioUrl = (filePath: string) => {
         if (!filePath) return '';
         const filename = filePath.split(/[\\\/]/).pop();
-        return `http://localhost:8080/uploads/${filename}`;
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+        return `${apiUrl}/uploads/${filename}`;
     };
 
     useEffect(() => {

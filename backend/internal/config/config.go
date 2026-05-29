@@ -17,6 +17,12 @@ type Config struct {
 	GoogleClientID     string
 	GoogleClientSecret string
 	GoogleRedirectURL  string
+	R2AccountID        string
+	R2AccessKeyID      string
+	R2SecretAccessKey  string
+	R2BucketName       string
+	R2PublicDomain     string
+	FrontendURL        string
 }
 
 // Load reads config from local .env or system env variables in prod
@@ -34,6 +40,12 @@ func Load() *Config {
 		GoogleClientID:     getEnv("GOOGLE_CLIENT_ID", ""),
 		GoogleClientSecret: getEnv("GOOGLE_CLIENT_SECRET", ""),
 		GoogleRedirectURL:  getEnv("GOOGLE_REDIRECT_URL", ""),
+		R2AccountID:        getEnv("R2_ACCOUNT_ID", ""),
+		R2AccessKeyID:      getEnv("R2_ACCESS_KEY_ID", ""),
+		R2SecretAccessKey:  getEnv("R2_SECRET_ACCESS_KEY", ""),
+		R2BucketName:       getEnv("R2_BUCKET_NAME", ""),
+		R2PublicDomain:     getEnv("R2_PUBLIC_DOMAIN", ""),
+		FrontendURL:        getEnv("FRONTEND_URL", "http://localhost:3000"),
 	}
 }
 

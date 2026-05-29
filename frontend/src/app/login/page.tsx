@@ -56,7 +56,8 @@ export default function LoginPage() {
     };
 
     const handleGoogleOAuth = () => {
-        window.location.href = 'http://localhost:8080/auth/google';
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+        window.location.href = `${apiUrl}/auth/google`;
     };
 
     return (

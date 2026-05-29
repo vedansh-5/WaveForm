@@ -15,6 +15,7 @@ import (
 	"github.com/vedansh-5/waveform/backend/internal/middleware"
 	"github.com/vedansh-5/waveform/backend/internal/repository"
 	"github.com/vedansh-5/waveform/backend/internal/service"
+	"github.com/vedansh-5/waveform/backend/internal/storage"
 )
 
 func main() {
@@ -41,7 +42,15 @@ func main() {
 	userService := service.NewUserService(userRepo)
 	userHandler := handler.NewUserHandler(userService, cfg)
 	oauthHandler := handler.NewOAuthHandler(userService, cfg)
-	recordingHandler := handler.NewRecordingHandler(recordingRepo)
+	var storageClient storage.StorageClient
+	if cfg.R2AccountID != "" {
+		var sErr error
+		storageClient, sErr = storage.NewR2StorageClient(cfg)
+		if sErr != nil {
+			log.Printf("Warning: R2 Storage client failed: %v", sErr)
+		}
+	}
+	recordingHandler := handler.NewRecordingHandler(recordingRepo, storageClient)
 
 	// create fiber app instance
 	app := fiber.New(fiber.Config{
@@ -54,7 +63,7 @@ func main() {
 
 	// Fiber's native CORS middleware
 	app.Use(cors.New(cors.Config{
-		AllowOrigins:     "http://localhost:3000",
+		AllowOrigins:     "http://localhost:3000," + cfg.FrontendURL,
 		AllowHeaders:     "Origin, Content-Type, Accept, Authorization",
 		AllowMethods:     "GET, POST, PUT, DELETE, OPTIONS",
 		AllowCredentials: true, // Enables sending secure session cookies
