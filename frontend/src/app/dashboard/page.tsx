@@ -56,7 +56,7 @@ export default function DashboardPage() {
     const getAudioUrl = (filePath: string) => {
         if (!filePath) return '';
         const filename = filePath.split(/[\\\/]/).pop();
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://waveform-api.onrender.com';
         return `${apiUrl}/uploads/${filename}`;
     };
 

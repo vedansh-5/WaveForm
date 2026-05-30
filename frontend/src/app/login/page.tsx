@@ -56,7 +56,7 @@ export default function LoginPage() {
     };
 
     const handleGoogleOAuth = () => {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://waveform-api.onrender.com';
         window.location.href = `${apiUrl}/auth/google`;
     };
 

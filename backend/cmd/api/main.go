@@ -61,6 +61,12 @@ func main() {
 	// register global middlewares
 	app.Use(recover.New()) // Safely recovers from panics in endpoints
 
+	// Fiber's native CORS middleware (gracefully handles empty FRONTEND_URL)
+	allowedOrigins := "http://localhost:3000"
+	if cfg.FrontendURL != "" {
+		allowedOrigins += "," + cfg.FrontendURL
+	}
+
 	// Fiber's native CORS middleware
 	app.Use(cors.New(cors.Config{
 		AllowOrigins:     "http://localhost:3000," + cfg.FrontendURL,
