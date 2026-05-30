@@ -69,7 +69,7 @@ func main() {
 
 	// Fiber's native CORS middleware
 	app.Use(cors.New(cors.Config{
-		AllowOrigins:     "http://localhost:3000," + cfg.FrontendURL,
+		AllowOrigins:     allowedOrigins,
 		AllowHeaders:     "Origin, Content-Type, Accept, Authorization",
 		AllowMethods:     "GET, POST, PUT, DELETE, OPTIONS",
 		AllowCredentials: true, // Enables sending secure session cookies
