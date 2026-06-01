@@ -64,7 +64,12 @@ func main() {
 	// Fiber's native CORS middleware (gracefully handles empty FRONTEND_URL)
 	allowedOrigins := "http://localhost:3000"
 	if cfg.FrontendURL != "" {
-		allowedOrigins += "," + cfg.FrontendURL
+		trimmedFrontendURL := cfg.FrontendURL
+		// Dynamically trim any trailing slashes so CORS never blocks
+		for len(trimmedFrontendURL) > 0 && trimmedFrontendURL[len(trimmedFrontendURL)-1] == '/' {
+			trimmedFrontendURL = trimmedFrontendURL[:len(trimmedFrontendURL)-1]
+		}
+		allowedOrigins += "," + trimmedFrontendURL
 	}
 
 	// Fiber's native CORS middleware

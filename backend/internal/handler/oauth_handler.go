@@ -153,8 +153,17 @@ func (h *OAuthHandler) GoogleCallback(c *fiber.Ctx) error {
 			"error": "failed to issue backend authentication token",
 		})
 	}
+	frontendURL := h.cfg.FrontendURL
+	if frontendURL == "" {
+		frontendURL = "https://localhost:3000"
+	}
+
+	// Trim any trailing slashes dynamically to avoid URL structure issues
+	if len(frontendURL) > 0 && frontendURL[len(frontendURL)-1] == '/' {
+		frontendURL = frontendURL[:len(frontendURL)-1]
+	}
 
 	// redirect browser back to the Next.js frontend auth callback router
-	frontendCallbackURL := fmt.Sprintf("http://localhost:3000/auth/callback?token=%s", ourToken)
+	frontendCallbackURL := fmt.Sprintf("%s/auth/callback?token=%s", frontendURL, ourToken)
 	return c.Redirect(frontendCallbackURL, fiber.StatusTemporaryRedirect)
 }
