@@ -6,6 +6,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -21,6 +22,10 @@ func InitDBPool(databaseURL string) (*pgxpool.Pool, error) {
 	if err != nil {
 		return nil, fmt.Errorf("unable to parse database url: %w", err)
 	}
+
+	// Disable prepared statement cache to ensure full compatibility with
+	// connection poolers like PgBouncer in transaction mode (Render, Supabase, Neon)
+	config.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
 
 	// connection pooling setup prevents connection resource leaks
 	config.MaxConns = 10                      // max nos of active connection in pool
